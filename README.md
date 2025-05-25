@@ -4,7 +4,7 @@ A simple React-based application to manage and calculate weekly wages for multip
 
 ## 🌐 Live Demo
 
-[Live on Render](https://dashboard.render.com/static/srv-d0otva6mcj7s73dj3dg0) 
+[Live on Render]([https://dashboard.render.com/static/srv-d0otva6mcj7s73dj3dg0](https://payroll-calculator-k09n.onrender.com/)) 
 
 ---
 
