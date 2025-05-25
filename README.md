@@ -1,4 +1,4 @@
-# 🧾 Payroll Calculator
+# Payroll Calculator
 
 A simple React-based application to manage and calculate weekly wages for multiple workers. Users can input worker names, hourly wages, and daily hours worked. The program supports CSV upload/export and PDF generation with summaries.
 
