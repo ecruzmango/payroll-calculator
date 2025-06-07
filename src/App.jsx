@@ -7,6 +7,7 @@ import autoTable from 'jspdf-autotable';
 export default function PayrollManager() {
   const [workers, setWorkers] = useState([]);
   const [days, setDays] = useState(['sabado', 'domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes']);
+  const [sortOrder, setSortOrder] = useState('az');
   const tableRef = useRef(null);
 
   const handleCsvUpload = (e) => {
@@ -17,10 +18,11 @@ export default function PayrollManager() {
       header: true,
       skipEmptyLines: true,
       complete: (result) => {
-        const parsed = result.data.map(row => ({
+        const parsed = result.data.map((row) => ({
+          id: crypto.randomUUID(),
           name: row.name || '',
           wage: row.wage || '',
-          hours: days.reduce((acc, day) => ({ ...acc, [day]: '' }), {})
+          hours: days.reduce((acc, day) => ({ ...acc, [day]: row[day] || '' }), {})
         }));
         setWorkers(parsed);
       }
@@ -29,31 +31,42 @@ export default function PayrollManager() {
 
   const handleAddWorker = () => {
     setWorkers([...workers, {
+      id: crypto.randomUUID(),
       name: '',
       wage: '',
       hours: days.reduce((acc, day) => ({ ...acc, [day]: '' }), {})
     }]);
   };
 
-  const removeWorker = (index) => {
+  const removeWorker = (id) => {
     const confirmed = window.confirm("¿Estás seguro de que quieres eliminar este trabajador?");
     if (confirmed) {
-      setWorkers(workers.filter((_, i) => i !== index));
+      setWorkers(workers.filter(w => w.id !== id));
     }
   };
 
-  const updateWorker = (index, key, value) => {
-    const updated = [...workers];
-    updated[index][key] = key === 'wage'
-      ? (value === '' ? '' : parseFloat(value) || 0)
-      : value;
-    setWorkers(updated);
+  const updateWorker = (id, key, value) => {
+    setWorkers(workers.map(w =>
+      w.id === id
+        ? { ...w, [key]: key === 'wage'
+          ? (value === '' ? '' : parseFloat(value) || 0)
+          : value }
+        : w
+    ));
   };
 
-  const updateHour = (index, day, value) => {
-    const updated = [...workers];
-    updated[index].hours[day] = value === '' ? '' : Math.max(0, parseFloat(value) || 0);
-    setWorkers(updated);
+  const updateHour = (id, day, value) => {
+    setWorkers(workers.map(w =>
+      w.id === id
+        ? {
+            ...w,
+            hours: {
+              ...w.hours,
+              [day]: value === '' ? '' : Math.max(0, parseFloat(value) || 0)
+            }
+          }
+        : w
+    ));
   };
 
   const exportCSV = () => {
@@ -67,16 +80,37 @@ export default function PayrollManager() {
     saveAs(blob, 'trabajadores.csv');
   };
 
+  const updateCsvFile = () => {
+    const csvData = workers.map(w => ({
+      name: w.name,
+      wage: w.wage,
+      ...w.hours
+    }));
+    const csv = Papa.unparse(csvData);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    saveAs(blob, 'trabajadores.csv'); // use same file name
+  };
+
   const exportPDF = () => {
     const doc = new jsPDF();
-    const headers = ['Nombre', 'Salario', ...days.map(d => d.charAt(0).toUpperCase() + d.slice(1)), 'Total Horas', 'Total Pago'];
-    const body = workers.map((w, i) => [
-      w.name,
-      w.wage === '' ? '' : `$${parseFloat(w.wage).toFixed(2)}`,
-      ...days.map(day => w.hours[day] === '' ? '' : parseFloat(w.hours[day]).toFixed(2)),
-      getTotalHours(w).toFixed(2),
-      `$${getTotalPay(w).toFixed(2)}`
-    ]);
+    const headers = [
+      'Nombre',
+      'Salario',
+      ...days.map(d => `Horas - ${d.charAt(0).toUpperCase() + d.slice(1)}`),
+      'Total Horas',
+      'Total Pago'
+    ];
+
+  const body = workers.map((w) => [
+    w.name,
+    w.wage === '' ? '' : `$${parseFloat(w.wage).toFixed(2)}`,
+    ...days.map(day => {
+      const hours = parseFloat(w.hours[day]) || 0;
+      return `${day.charAt(0).toUpperCase() + day.slice(1)}: ${hours.toFixed(2)} horas`;
+    }),
+    getTotalHours(w).toFixed(2),
+    `$${getTotalPay(w).toFixed(2)}`
+  ]);
 
     const totals = [
       'TOTAL',
@@ -92,6 +126,8 @@ export default function PayrollManager() {
       head: [headers],
       body: [...body, totals],
       startY: 20,
+      styles: { halign: 'center' },
+      headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' }
     });
 
     doc.save('trabajadores.pdf');
@@ -109,7 +145,17 @@ export default function PayrollManager() {
       <div className="card">
         <div className="card-content space-y-4">
           <input type="file" accept=".csv" onChange={handleCsvUpload} />
-          <button onClick={handleAddWorker}>Agregar Trabajador</button>
+
+          <div className="flex gap-4">
+            <button onClick={handleAddWorker}>Agregar Trabajador</button>
+            <select onChange={(e) => setSortOrder(e.target.value)} value={sortOrder}>
+              <option value="az">Nombre A-Z</option>
+              <option value="za">Nombre Z-A</option>
+              <option value="created">Orden Original</option>
+            </select>
+            <button onClick={updateCsvFile}>Actualizar Archivo CSV</button>
+          </div>
+
           <div className="overflow-auto">
             <table ref={tableRef} className="w-full border">
               <thead>
@@ -123,12 +169,16 @@ export default function PayrollManager() {
                 </tr>
               </thead>
               <tbody>
-                {workers.map((worker, i) => (
-                  <tr key={i}>
+                {[...workers].sort((a, b) => {
+                  if (sortOrder === 'az') return a.name.localeCompare(b.name);
+                  if (sortOrder === 'za') return b.name.localeCompare(a.name);
+                  return 0;
+                }).map((worker) => (
+                  <tr key={worker.id}>
                     <td>
                       <input
                         value={worker.name}
-                        onChange={e => updateWorker(i, 'name', e.target.value)}
+                        onChange={e => updateWorker(worker.id, 'name', e.target.value)}
                       />
                     </td>
                     <td>
@@ -136,7 +186,7 @@ export default function PayrollManager() {
                         type="number"
                         value={worker.wage}
                         min="0"
-                        onChange={e => updateWorker(i, 'wage', e.target.value)}
+                        onChange={e => updateWorker(worker.id, 'wage', e.target.value)}
                       />
                     </td>
                     {days.map(day => (
@@ -144,23 +194,32 @@ export default function PayrollManager() {
                         <input
                           type="number"
                           value={worker.hours[day]}
-                          onChange={e => updateHour(i, day, e.target.value)}
-                          data-row={i}
+                          onChange={e => updateHour(worker.id, day, e.target.value)}
+                          data-row={worker.id}
                           data-day={day}
                           onKeyDown={(e) => {
-                            if (["ArrowUp", "ArrowDown"].includes(e.key)) {
-                              e.preventDefault();
-                            }
-                            const row = i;
+                            const rowIds = workers.map(w => w.id);
+                            const currentRowIndex = rowIds.indexOf(worker.id);
                             const col = days.indexOf(day);
+
                             if (e.key === 'ArrowRight') {
                               const nextDay = days[col + 1];
-                              const next = document.querySelector(`[data-row="${row}"][data-day="${nextDay}"]`);
+                              const next = document.querySelector(`[data-row="${worker.id}"][data-day="${nextDay}"]`);
                               next?.focus();
                             } else if (e.key === 'ArrowLeft') {
                               const prevDay = days[col - 1];
-                              const prev = document.querySelector(`[data-row="${row}"][data-day="${prevDay}"]`);
+                              const prev = document.querySelector(`[data-row="${worker.id}"][data-day="${prevDay}"]`);
                               prev?.focus();
+                            } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                              e.preventDefault();
+                              const newRowIndex = e.key === 'ArrowDown'
+                                ? Math.min(currentRowIndex + 1, rowIds.length - 1)
+                                : Math.max(currentRowIndex - 1, 0);
+
+                              const next = document.querySelector(
+                                `[data-row="${rowIds[newRowIndex]}"][data-day="${day}"]`
+                              );
+                              next?.focus();
                             }
                           }}
                         />
@@ -168,7 +227,7 @@ export default function PayrollManager() {
                     ))}
                     <td>{getTotalHours(worker).toFixed(2)}</td>
                     <td>${getTotalPay(worker).toFixed(2)}</td>
-                    <td><button onClick={() => removeWorker(i)}>🗑️</button></td>
+                    <td><button onClick={() => removeWorker(worker.id)}>🗑️</button></td>
                   </tr>
                 ))}
                 {workers.length > 0 && (
