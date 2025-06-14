@@ -7,7 +7,7 @@ import autoTable from 'jspdf-autotable';
 export default function PayrollManager() {
   const [workers, setWorkers] = useState([]);
   const [days, setDays] = useState(['sabado', 'domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes']);
-  const [sortOrder, setSortOrder] = useState('az');
+  const [sortOrder, setSortOrder] = useState('created');
   const tableRef = useRef(null);
 
   const handleCsvUpload = (e) => {
@@ -73,7 +73,6 @@ export default function PayrollManager() {
     const csvData = workers.map(w => ({
       name: w.name,
       wage: w.wage,
-      ...w.hours
     }));
     const csv = Papa.unparse(csvData);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -91,47 +90,64 @@ export default function PayrollManager() {
     saveAs(blob, 'trabajadores.csv'); // use same file name
   };
 
-  const exportPDF = () => {
-    const doc = new jsPDF();
-    const headers = [
-      'Nombre',
-      'Salario',
-      ...days.map(d => `Horas - ${d.charAt(0).toUpperCase() + d.slice(1)}`),
-      'Total Horas',
-      'Total Pago'
-    ];
+const exportPDF = () => {
+  const doc = new jsPDF();
+  const headers = [
+    'Nombre',
+    'Salario',
+    ...days.map(d => `${d.charAt(0).toUpperCase() + d.slice(1)}`),
+    'Total Horas',
+    'Total Pago'
+  ];
 
   const body = workers.map((w) => [
     w.name,
     w.wage === '' ? '' : `$${parseFloat(w.wage).toFixed(2)}`,
     ...days.map(day => {
       const hours = parseFloat(w.hours[day]) || 0;
-      return `${day.charAt(0).toUpperCase() + day.slice(1)}: ${hours.toFixed(2)} horas`;
+      return `${day.charAt(0).toUpperCase() + day.slice(1)} ${hours.toFixed(1)} \nhoras`;
     }),
-    getTotalHours(w).toFixed(2),
+    'Horas Total3\n' + getTotalHours(w).toFixed(2),
     `$${getTotalPay(w).toFixed(2)}`
   ]);
 
-    const totals = [
-      'TOTAL',
-      '-',
-      ...days.map(day =>
-        workers.reduce((sum, w) => sum + (parseFloat(w.hours[day]) || 0), 0).toFixed(2)
-      ),
-      workers.reduce((sum, w) => sum + getTotalHours(w), 0).toFixed(2),
-      `$${workers.reduce((sum, w) => sum + getTotalPay(w), 0).toFixed(2)}`
-    ];
+  const totals = [
+    'TOTAL',
+    '-',
+    ...days.map(day =>
+      workers.reduce((sum, w) => sum + (parseFloat(w.hours[day]) || 0), 0).toFixed(2)
+    ),
+    workers.reduce((sum, w) => sum + getTotalHours(w), 0).toFixed(2),
+    `$${workers.reduce((sum, w) => sum + getTotalPay(w), 0).toFixed(2)}`
+  ];
 
-    autoTable(doc, {
-      head: [headers],
-      body: [...body, totals],
-      startY: 20,
-      styles: { halign: 'center' },
-      headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' }
-    });
+  autoTable(doc, {
+    head: [headers],
+    body: [...body, totals],
+    startY: 20,
+    styles: { 
+      halign: 'center',
+      lineColor: [0, 0, 0], // Black color for borders
+      lineWidth: 0.5 // Bold border width
+    },
+    headStyles: { 
+      fillColor: [41, 128, 185], 
+      textColor: 255, 
+      fontStyle: 'bold',
+      lineColor: [0, 0, 0],
+      lineWidth: 0.5
+    },
+    bodyStyles: {
+      lineColor: [0, 0, 0],
+      lineWidth: 0.5
+    },
+    tableLineColor: [0, 0, 0], // Outer table border
+    tableLineWidth: 0.5, // Outer table border width
+    theme: 'grid' // This ensures all cell borders are drawn
+  });
 
-    doc.save('trabajadores.pdf');
-  };
+  doc.save('trabajadores.pdf');
+};
 
   const getTotalHours = (w) =>
     days.reduce((acc, d) => acc + (parseFloat(w.hours[d]) || 0), 0);
