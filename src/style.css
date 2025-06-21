@@ -199,3 +199,18 @@ input[type="file"] {
     background-color: #3f52ff;
   }
 }
+
+/* make the wrapper scroll vertically */
+.scroll-container {
+  position: relative;
+  max-height: 500px;    /* or 100px, or whatever you like */
+  overflow-y: auto;
+}
+
+/* pin the header row in place */
+.sticky-header th {
+  position: sticky;
+  top: 0;
+  background-color: #333;  /* match your thead background */
+  z-index: 5;              /* above the body rows */
+}
