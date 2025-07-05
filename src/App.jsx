@@ -70,6 +70,8 @@ export default function PayrollManager() {
     ));
   };
 
+  // traditional function uses function add(a,b) {}
+  // and arrow function is used as: const add = (a,b) => 
   const exportCSV = () => {
     const csv = Papa.unparse(
       workers.map(w => ({
@@ -86,39 +88,83 @@ export default function PayrollManager() {
     const headers = [
       'Nombre',
       'Salario',
+      // the ... is known as the spread operator which transforms each element in the array and returns a new array || ARR1 [1,2,3] SO ARR2 [ARR1, 4,5,6]
       ...days.map(d => d.charAt(0).toUpperCase() + d.slice(1)),
       'Total Horas',
       'Total Pago'
     ];
+
+    // TODO: Build table body rows (one per worker)
+    //
     const body = workers.map(w => [
       w.name,
       w.wage === '' ? '' : `$${parseFloat(w.wage).toFixed(2)}`,
       ...days.map(day => {
+        const dayName = day.charAt(0).toUpperCase() + day.slice(1);
         const h = parseFloat(w.hours[day]) || 0;
-        return `${h.toFixed(1)} h`;
+
+        return `${dayName}\n${h.toFixed(1)}`;
       }),
-      getTotalHours(w).toFixed(2),
-      `$${getTotalPay(w).toFixed(2)}`
+      getTotalHours(w).toLocaleString('en-US', { minimumFractionDigits: 2 }),
+      `$${getTotalPay(w).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
     ]);
+
+
+    // TODO: add table Rows
     const totals = [
       'TOTAL',
       '-',
       ...days.map(day =>
-        workers.reduce((sum, w) => sum + (parseFloat(w.hours[day]) || 0), 0).toFixed(2)
+        workers.reduce((sum, w) => sum + (parseFloat(w.hours[day]) || 0), 0)
+        .toLocaleString('en-US', { minimumFractionDigits: 2})
       ),
-      workers.reduce((sum, w) => sum + getTotalHours(w), 0).toFixed(2),
-      `$${workers.reduce((sum, w) => sum + getTotalPay(w), 0).toFixed(2)}`
+
+      workers.reduce((sum, w) => sum + getTotalHours(w), 0).toLocaleString('en-US', { minimumFractionDigits: 2}),
+      `$${workers.reduce((sum, w) => sum + getTotalPay(w), 0).toLocaleString('en-US', { minimumFractionDigits: 2})}`
     ];
 
-    autoTable(doc, {
-      head: [headers],
-      body: [...body, totals],
-      startY: 20,
-      theme: 'grid',
-      headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' }
+    // TODO: autoTable generates a table inside the PDF 
+    // head = the column headers (wrapped in an array because it supports multiple rows)
+    // body = the worker data rows + totals row
+    // startY = 20 → Starts table 20px down from top
+    // theme = 'grid' → Makes a boxy table layout
+    // headStyles → Style for the header row (blue background, white text)
+
+
+    // set the date of day
+    const today = new Date();
+    const formattedDate = today.toLocaleDateString('es-ES', {
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric'
     });
-    doc.save('trabajadores.pdf');
-  };
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const dateText = `Fecha: ${formattedDate}`;
+    const dateWidth = doc.getTextWidth(dateText);
+
+    doc.setFontSize(10);
+    doc.text(dateText, pageWidth - dateWidth - 11, 10); //14 = right margin
+
+  autoTable(doc, {
+    head: [headers],
+    body: [...body, totals],
+    startY: 12,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [41, 128, 185],
+      textColor: 255,
+      fontStyle: 'bold'
+    },
+    styles: {
+      fontSize: 9,
+      overflow: 'linebreak',
+      cellPadding: 2
+    },
+    tableWidth: 'wrap' // most responsive and no cutoff
+  });
+
+      doc.save('trabajadores.pdf');
+    };
 
   const getTotalHours = w => days.reduce((sum, d) => sum + (parseFloat(w.hours[d]) || 0), 0);
   const getTotalPay = w => getTotalHours(w) * (parseFloat(w.wage) || 0);
