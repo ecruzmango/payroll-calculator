@@ -97,7 +97,7 @@ export default function PayrollManager() {
     // TODO: Build table body rows (one per worker)
     //
     const body = workers.map(w => [
-      w.name,
+      w.name.replace(' ', '\n'),
       w.wage === '' ? '' : `$${parseFloat(w.wage).toFixed(2)}`,
       ...days.map(day => {
         const dayName = day.charAt(0).toUpperCase() + day.slice(1);
@@ -145,7 +145,10 @@ export default function PayrollManager() {
     doc.setFontSize(10);
     doc.text(dateText, pageWidth - dateWidth - 11, 10); //14 = right margin
 
-  autoTable(doc, {
+  // Try larger font, and fallback if overflow is detected
+  let fontSize = 9;
+
+  const autoTableOptions = {
     head: [headers],
     body: [...body, totals],
     startY: 12,
@@ -156,15 +159,36 @@ export default function PayrollManager() {
       fontStyle: 'bold'
     },
     styles: {
-      fontSize: 9,
+      fontSize: fontSize,
       overflow: 'linebreak',
       cellPadding: 2
     },
-    tableWidth: 'wrap' // most responsive and no cutoff
-  });
+    tableWidth: 'auto',  // maximize available space
+    margin: { left: 5, right: 5 },
+    didDrawPage: (data) => {
+      const tableWidth = data.table.width;
+      const overflow = tableWidth > pageWidth - 10;
 
-      doc.save('trabajadores.pdf');
-    };
+      if (overflow) {
+        // Reduce font size and re-render table
+        doc.deletePage(doc.internal.getCurrentPageInfo().pageNumber); // Clear page
+        fontSize = 7; // Shrink font
+
+        autoTable(doc, {
+          ...autoTableOptions,
+          styles: {
+            ...autoTableOptions.styles,
+            fontSize: fontSize
+          }
+        });
+      }
+    }
+  };
+
+  autoTable(doc, autoTableOptions);
+
+  doc.save('trabajadores.pdf');
+};
 
   const getTotalHours = w => days.reduce((sum, d) => sum + (parseFloat(w.hours[d]) || 0), 0);
   const getTotalPay = w => getTotalHours(w) * (parseFloat(w.wage) || 0);
