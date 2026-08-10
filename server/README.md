@@ -24,6 +24,8 @@ Run both during development.
 | `ALLOWED_ORIGIN` | `http://localhost:5173,http://127.0.0.1:5173` | Origins allowed to call the manager API, comma-separated |
 | `VITE_API_URL` *(frontend)* | `http://localhost:3001` | Where the manager app looks for this server |
 | `REMINDER_DAY` | `5` (Friday) | Day of week the owner should send the link, `0`=Sunday |
+| `REMINDER_TIMES` | `8` | Hours to nudge on that day, e.g. `6,12,18`. Each fires once |
+| `TZ` | system | Timezone for the week and the schedule. **Set this in production** |
 | `REMINDER_WEBHOOK_URL` | *(unset)* | Optional. POSTed to when a reminder is due, for phone push |
 | `PUBLIC_URL` | `http://localhost:$PORT` | This server's public address, used in pushed messages |
 
@@ -36,8 +38,22 @@ ALLOWED_ORIGIN="http://localhost:5173,http://192.168.1.115:5173" npm start
 ## Weekly reminder
 
 The app shows a banner when this week's link still needs sending, with the
-message pre-written and a one-tap WhatsApp button. Clicking either that or
-**Ya lo envié** silences it until next week.
+message pre-written and a copy button. Clicking that or **Ya lo envié**
+silences it until next week.
+
+Pushes fire at each hour in `REMINDER_TIMES` on `REMINDER_DAY`, at most once per
+hour slot, and stop early in three cases: the owner marks it sent, every worker
+has submitted, or the list has no workers. Each notification's title carries the
+live count, e.g. *"Horas Cuadrilla Norte - faltan 2 de 5"*.
+
+A slot fires on the first check *at or after* its hour rather than exactly on
+it, so a sleeping free-tier server still delivers the nudge — late rather than
+never.
+
+**Set `TZ`.** Everything above, and the Saturday-to-Friday week itself, is
+computed in the server's timezone. Hosts default to UTC, which in the Americas
+moves the week boundary to Friday evening and fires reminders in the middle of
+the night. The server logs a warning at startup if `TZ` is unset.
 
 "Due" is **computed**, not scheduled: it is true once `REMINDER_DAY` has been
 reached in the current payroll week and the owner hasn't marked it sent. A cron

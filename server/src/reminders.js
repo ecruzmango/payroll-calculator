@@ -1,4 +1,4 @@
-import { currentWeekOf, formatWeekRange, datesForWeek } from '../../shared/week.js';
+import { currentWeekOf, formatWeekRange, datesForWeek, toISODate } from '../../shared/week.js';
 import { DAYS } from '../../shared/hours-rules.js';
 import {
   allLists,
@@ -23,6 +23,38 @@ const WEBHOOK_URL = process.env.REMINDER_WEBHOOK_URL ?? '';
 // Lists untouched for this long are deleted. A list in weekly use is refreshed
 // every time the owner syncs or a worker submits, so only abandoned ones age out.
 const PURGE_AFTER_DAYS = Number(process.env.PURGE_AFTER_DAYS ?? 60);
+
+/**
+ * Hours of the day to push a reminder, once REMINDER_DAY has arrived.
+ * e.g. "6,12,18" nudges at 6am, noon and 6pm. Each fires at most once a day,
+ * and all of them stop as soon as every worker has submitted.
+ *
+ * These are hours in the server's timezone — set TZ (see below) or they will
+ * be UTC, which is not the owner's morning.
+ */
+const REMINDER_TIMES = [
+  ...new Set(
+    (process.env.REMINDER_TIMES ?? '8')
+      .split(',')
+      .map(s => Number(s.trim()))
+      .filter(n => Number.isInteger(n) && n >= 0 && n <= 23)
+  )
+].sort((a, b) => a - b);
+
+/**
+ * The most recent reminder hour that has already passed today, or null before
+ * the first one.
+ *
+ * Deliberately "has passed" rather than "is exactly now": on a free host the
+ * service sleeps, so the hourly check can miss the exact hour. This way a late
+ * wake still delivers the nudge, just late, instead of skipping it entirely.
+ */
+function currentSlot(now) {
+  const passed = REMINDER_TIMES.filter(h => h <= now.getHours());
+  return passed.length ? passed[passed.length - 1] : null;
+}
+
+const slotKey = (weekOf, now, slot) => `${weekOf}|${toISODate(now)}|${slot}`;
 
 /** The message the owner sends to the crew. Kept here so app and push agree. */
 export function reminderMessage(weekOf, link) {
@@ -87,7 +119,7 @@ const headerSafe = s =>
  * sent — otherwise trying it out would silence the real reminder — and omits
  * the "Ya lo envié" button, which would do the same thing if tapped.
  */
-export async function sendReminderPush(list, baseUrl, { test = false } = {}) {
+export async function sendReminderPush(list, baseUrl, { test = false, slot = null } = {}) {
   if (!WEBHOOK_URL) return { sent: false, reason: 'no-webhook' };
 
   const state = reminderState(list);
@@ -140,7 +172,7 @@ export async function sendReminderPush(list, baseUrl, { test = false } = {}) {
     });
     if (!res.ok) return { sent: false, reason: `http-${res.status}` };
 
-    if (!test) await markNotified(list.id, state.weekOf, ackToken);
+    if (!test) await markNotified(list.id, slot, ackToken);
     return { sent: true, weekLabel: state.weekLabel, missing: missing.length, total: workers.length };
   } catch (err) {
     // A failed push must never take the server down; the in-app banner still shows.
@@ -149,17 +181,35 @@ export async function sendReminderPush(list, baseUrl, { test = false } = {}) {
   }
 }
 
-/** The scheduled path: only when due, and only once per week per list. */
+/**
+ * The scheduled path: at most one push per reminder hour, per list, per day.
+ *
+ * Every guard here exists to avoid pestering the owner about something already
+ * handled: the day must have arrived, the owner must not have marked it sent,
+ * the slot must not have fired, the list must have workers, and somebody must
+ * actually still be missing.
+ */
 async function notifyIfDue(list, baseUrl) {
   const state = reminderState(list);
-  if (!state.due) return;
-  if (list.notified_week === state.weekOf) return; // already pushed this week
+  if (!state.due) return; // day not reached, or owner already marked it sent
 
-  // Nothing to chase on an empty list, and reminding about one is pure noise.
+  const now = new Date();
+  const slot = currentSlot(now);
+  if (slot === null) return; // before today's first reminder hour
+
+  const key = slotKey(state.weekOf, now, slot);
+  if (list.notified_slot === key) return; // this slot already fired
+
   const workers = await getWorkers(list.id);
-  if (!workers.length) return;
+  if (!workers.length) return; // nothing to chase on an empty list
 
-  await sendReminderPush(list, baseUrl);
+  const submitted = new Set((await latestSubmissions(list.id, state.weekOf)).map(s => s.workerId));
+  if (workers.every(w => submitted.has(w.id))) {
+    // Everyone has sent their hours — later nudges would be pure noise.
+    return;
+  }
+
+  await sendReminderPush(list, baseUrl, { slot: key });
 }
 
 /**
@@ -187,10 +237,27 @@ export function startReminderLoop(baseUrl) {
   tick();
   setInterval(tick, 60 * 60 * 1000).unref();
 
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const days = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
   console.log(
     WEBHOOK_URL
-      ? '[reminder] weekly push enabled'
+      ? `[reminder] push enabled — ${days[REMINDER_DAY]} at ${REMINDER_TIMES.join('h, ')}h (${zone ?? 'UNKNOWN'})`
       : '[reminder] no REMINDER_WEBHOOK_URL set — reminders show in the app only'
   );
+
+  // The whole schedule, and the Saturday-to-Friday week itself, is computed in
+  // the server's timezone. Two ways this goes wrong:
+  //   - TZ unset: hosts default to UTC, moving the week boundary into Friday
+  //     evening for the Americas.
+  //   - TZ set to an abbreviation like "CDT": not a valid IANA name, so the
+  //     zone resolves to undefined and date handling silently misbehaves.
+  if (!zone) {
+    console.warn(
+      `[reminder] TZ="${process.env.TZ}" is not a valid timezone. ` +
+        'Use an IANA name such as America/Chicago or America/Mexico_City.'
+    );
+  } else if (zone === 'UTC' && !process.env.TZ) {
+    console.warn('[reminder] timezone is UTC — set TZ (e.g. TZ=America/Chicago)');
+  }
   console.log(`[purge] inactive lists removed after ${PURGE_AFTER_DAYS} days`);
 }

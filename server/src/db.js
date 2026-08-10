@@ -68,9 +68,10 @@ export async function initSchema() {
   const columns = info.rows.map(r => r.name);
 
   //   reminded_week — the week the owner marked as sent
-  //   notified_week — the week an outbound push already fired for
+  //   notified_week — legacy: the week a push fired for, before per-slot times
+  //   notified_slot — the last "week|date|hour" a push fired for
   //   ack_token     — single-use token behind the "Ya lo envié" button
-  for (const column of ['reminded_week', 'notified_week', 'ack_token']) {
+  for (const column of ['reminded_week', 'notified_week', 'notified_slot', 'ack_token']) {
     if (!columns.includes(column)) {
       await db.execute(`ALTER TABLE lists ADD COLUMN ${column} TEXT`);
     }
@@ -173,11 +174,11 @@ export async function markApplied(listId, ids) {
 export const markReminded = (listId, weekOf) =>
   db.execute({ sql: 'UPDATE lists SET reminded_week = ? WHERE id = ?', args: [weekOf, listId] });
 
-/** Record that an outbound notification already fired for this week. */
-export const markNotified = (listId, weekOf, ackToken) =>
+/** Record which reminder slot last fired, and the ack token that went with it. */
+export const markNotified = (listId, slotKey, ackToken) =>
   db.execute({
-    sql: 'UPDATE lists SET notified_week = ?, ack_token = ? WHERE id = ?',
-    args: [weekOf, ackToken ?? null, listId]
+    sql: 'UPDATE lists SET notified_slot = ?, ack_token = ? WHERE id = ?',
+    args: [slotKey ?? null, ackToken ?? null, listId]
   });
 
 /** Consume an ack token from a notification button. Returns the list, or null. */

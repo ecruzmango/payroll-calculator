@@ -60,6 +60,8 @@ Environment variables:
 | `DB_AUTH_TOKEN` | the Turso auth token |
 | `REMINDER_WEBHOOK_URL` | your ntfy URL, e.g. `https://ntfy.sh/pagos-…` |
 | `REMINDER_DAY` | `5` (Friday) |
+| `REMINDER_TIMES` | `6,12,18` — hours to nudge on that day |
+| `TZ` | `America/Mexico_City` — **required**, or everything runs on UTC |
 | `NODE_VERSION` | `22` |
 
 Deploy, then visit the service URL. You should see **✓ Funcionando**.
@@ -84,6 +86,11 @@ Environment variable:
 | Key | Value |
 |---|---|
 | `VITE_API_URL` | your server's URL from step 2, e.g. `https://payroll-server.onrender.com` |
+
+**No trailing slash.** `https://host/` produces `https://host//api/…`, which
+404s before the CORS middleware runs — so the browser blocks the response and
+the app reports a connection failure rather than a 404. The code strips them
+now, but the habit is worth keeping.
 
 Add a rewrite rule so refreshing a page works: **Redirects/Rewrites** →
 source `/*`, destination `/index.html`, type **Rewrite**.
