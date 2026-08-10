@@ -1,0 +1,49 @@
+# Render blueprint: a static site for the payroll app and a web service for the
+# hours server. Both are free plans. The database is Turso (see server/README),
+# so nothing is lost when Render wipes the filesystem on redeploy.
+#
+# The two services reference each other by URL, which do not exist until the
+# first deploy — so ALLOWED_ORIGIN, PUBLIC_URL and VITE_API_URL are left for you
+# to fill in from the dashboard afterwards. See DEPLOY.md.
+services:
+  - type: web
+    name: payroll-server
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      # Set in the dashboard; never commit these.
+      - key: DB_URL
+        sync: false
+      - key: DB_AUTH_TOKEN
+        sync: false
+      - key: ALLOWED_ORIGIN
+        sync: false
+      - key: PUBLIC_URL
+        sync: false
+      - key: REMINDER_WEBHOOK_URL
+        sync: false
+      - key: REMINDER_DAY
+        value: 5
+
+  - type: web
+    name: payroll-app
+    runtime: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      # The server's URL. Baked in at build time, so changing it needs a rebuild.
+      - key: VITE_API_URL
+        sync: false
+    routes:
+      # Single-page app: every path serves index.html.
+      - type: rewrite
+        source: /*
+        destination: /index.html
