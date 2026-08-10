@@ -154,6 +154,11 @@ async function notifyIfDue(list, baseUrl) {
   const state = reminderState(list);
   if (!state.due) return;
   if (list.notified_week === state.weekOf) return; // already pushed this week
+
+  // Nothing to chase on an empty list, and reminding about one is pure noise.
+  const workers = await getWorkers(list.id);
+  if (!workers.length) return;
+
   await sendReminderPush(list, baseUrl);
 }
 

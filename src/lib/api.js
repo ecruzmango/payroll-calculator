@@ -1,5 +1,11 @@
 // Base URL of the hours server. Override with VITE_API_URL when deploying.
-export const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
+//
+// Trailing slashes are stripped: paths below all start with "/", so a value
+// like "https://host/" would produce "https://host//api/...". That double
+// slash 404s *before* the CORS middleware runs, so the browser blocks the
+// response and the app reports a connection failure instead of a 404 —
+// an unpleasant amount of time to spend on one character.
+export const API_BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:3001').replace(/\/+$/, '');
 
 export const formUrl = token => `${API_BASE}/t/${token}`;
 

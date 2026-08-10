@@ -139,16 +139,43 @@ Both have fallbacks now, but on HTTPS the primary path is used.
 
 ---
 
+## 6. Stop the server sleeping
+
+Render's free plan sleeps a service after ~15 minutes without traffic, and
+waking it takes about 50 seconds. The first worker to tap the link each morning
+would sit staring at a blank tab.
+
+A service only sleeps if nothing talks to it, so point a free uptime monitor at
+the health endpoint:
+
+1. Sign up at [UptimeRobot](https://uptimerobot.com) (free) or
+   [cron-job.org](https://cron-job.org).
+2. New monitor → **HTTP(S)** → `https://your-server.onrender.com/health`
+3. Interval: **5 minutes**.
+
+That is the whole fix — no code changes, no cost.
+
+**One constraint:** Render's free tier provides a monthly pool of instance hours
+(750 at the time of writing). A service kept awake all month uses roughly 730 of
+them, so this fits — but only for *one* free web service on the account. Static
+sites do not count. Adding a second always-awake free service would exceed it.
+
+Note this is working around a tier designed to sleep, not a supported feature.
+It is widely done and not blocked, but it is Render's call.
+
+If that ever stops working, the permanent fixes are **Cloudflare Workers**
+(free, no cold start by design, but the server needs porting from Express to
+Hono) or **Fly.io** (~$2–3/month, wakes in a second or two, no tricks needed).
+
+---
+
 ## Known trade-offs of the free plan
 
-**The server sleeps after ~15 minutes idle.** The first worker to tap the link
-waits roughly 50 seconds for it to wake. Later ones are instant. If that becomes
-a complaint, Render's cheapest paid instance removes it.
-
-Worth knowing: the sleeping server also means the hourly reminder check does not
-run while asleep. The reminder is *computed*, not scheduled, so nothing is
-permanently missed — but the Friday push may arrive late, whenever the service
-next wakes. The in-app banner is unaffected and always correct.
+**Reminder timing.** While the server is asleep the hourly reminder check does
+not run. "Due" is *computed* rather than scheduled, so nothing is permanently
+missed — but the Friday push can arrive late, whenever the service next wakes.
+Keeping it awake (step 6) removes this too. The in-app banner is unaffected and
+always correct.
 
 **Backups.** Turso keeps the data, but take a copy before any big change:
 
