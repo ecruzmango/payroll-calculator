@@ -70,6 +70,53 @@ export function formatWeekRange(weekOfISO, locale = 'es-ES') {
   return `${full.format(start)} – ${full.format(end)}`;
 }
 
+/**
+ * How a week reads relative to today: "Esta semana", "Semana pasada", etc.
+ *
+ * Raw dates alone force people to work out which week they are looking at every
+ * single time. A relative name is what stops the owner picking the wrong one.
+ */
+export function relativeWeekName(weekOfISO, today = new Date()) {
+  const current = toISODate(startOfPayrollWeek(today));
+  const diff = Math.round(
+    (fromISODate(weekOfISO) - fromISODate(current)) / (7 * 24 * 60 * 60 * 1000)
+  );
+
+  if (diff === 0) return 'Esta semana';
+  if (diff === -1) return 'Semana pasada';
+  if (diff === 1) return 'Próxima semana';
+  if (diff < -1) return `Hace ${Math.abs(diff)} semanas`;
+  return `En ${diff} semanas`;
+}
+
+/** "Esta semana · 8 – 14 de agosto de 2026" */
+export function fullWeekLabel(weekOfISO, today = new Date()) {
+  return `${relativeWeekName(weekOfISO, today)} · ${formatWeekRange(weekOfISO)}`;
+}
+
+/** Today, spelled out: "lunes 10 de agosto". */
+export function formatToday(today = new Date(), locale = 'es-ES') {
+  return new Intl.DateTimeFormat(locale, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long'
+  }).format(today);
+}
+
+/**
+ * The weeks offered in the owner's picker: a couple ahead, several behind.
+ * Choosing from named weeks removes the guesswork a raw date field creates.
+ */
+export function selectableWeeks(today = new Date(), { back = 5, forward = 1 } = {}) {
+  const current = toISODate(startOfPayrollWeek(today));
+  const weeks = [];
+  for (let i = forward; i >= -back; i--) {
+    const weekOf = addWeeks(current, i);
+    weeks.push({ weekOf, name: relativeWeekName(weekOf, today), range: formatWeekRange(weekOf) });
+  }
+  return weeks;
+}
+
 /** Short per-column label, e.g. "Sábado 9/8". Used in the table header. */
 export function formatDayHeader(weekOfISO, day, label) {
   const date = datesForWeek(weekOfISO)[day];

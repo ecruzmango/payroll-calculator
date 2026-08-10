@@ -1,5 +1,5 @@
 import { DAY_LABELS, isPartialNumber, hoursIssue, totalHours } from '/shared/hours-rules.js';
-import { datesForWeek } from '/shared/week.js';
+import { datesForWeek, relativeWeekName, currentWeekOf } from '/shared/week.js';
 
 const token = location.pathname.split('/').pop();
 const app = document.getElementById('app');
@@ -24,6 +24,25 @@ const el = (tag, props = {}, ...children) => {
 };
 
 const emptyHours = () => Object.fromEntries(state.data.days.map(d => [d, '']));
+
+/**
+ * The week these hours belong to, stated plainly.
+ *
+ * Green only when it really is the current calendar week. The server's
+ * `isCurrent` flag means "this list's default week", which is not the same
+ * thing — if the owner is still collecting last week, that default *is* a past
+ * week, and colouring it green while labelling it "Semana pasada" would tell
+ * the worker two opposite things at once.
+ */
+function weekBanner(week) {
+  const isThisWeek = week.weekOf === currentWeekOf();
+  return el(
+    'div',
+    { className: `week-banner${isThisWeek ? '' : ' is-other'}` },
+    el('strong', {}, isThisWeek ? 'Horas de esta semana' : `Horas de ${relativeWeekName(week.weekOf).toLowerCase()}`),
+    el('span', {}, week.label)
+  );
+}
 
 async function boot() {
   try {
@@ -78,7 +97,7 @@ function renderNamePicker() {
 
   return [
     el('h1', {}, state.data.listName),
-    el('p', { className: 'sub' }, `Semana del ${week.label}`),
+    weekBanner(week),
     el('h2', {}, '¿Quién eres?'),
     el(
       'div',
@@ -167,7 +186,17 @@ function renderHoursForm() {
 
   return [
     el('h1', {}, `Hola, ${worker.name}`),
-    el('p', { className: 'sub' }, `${state.data.listName} · Semana del ${week.label}`),
+    el('p', { className: 'sub' }, state.data.listName),
+
+    // The week has to be impossible to miss: a worker filling in the wrong one
+    // silently sends the right numbers against the wrong dates.
+    weekBanner(week),
+
+    el(
+      'p',
+      { className: 'howto' },
+      'Escribe las horas que trabajaste cada día. Deja el día en blanco si no trabajaste.'
+    ),
 
     state.error ? el('div', { className: 'banner bad' }, state.error) : null,
 
@@ -208,7 +237,7 @@ function renderHoursForm() {
                 render();
               }
             },
-            `¿Enviar la semana del ${other.label}?`
+            `Cambiar a ${relativeWeekName(other.weekOf).toLowerCase()} (${other.label})`
           )
         : null,
       el(
@@ -241,6 +270,7 @@ function renderDone(result) {
     el('p', { className: 'sub' }, `Recibimos tus horas, ${result.workerName}.`),
     el('div', { className: 'done-total' }, `${formatTotal(result.total)} horas`),
     el('p', { className: 'sub' }, `Semana del ${result.weekLabel}`),
+    el('p', { className: 'sub' }, 'Si la semana no es la correcta, vuelve y envíala de nuevo.'),
     el(
       'button',
       {

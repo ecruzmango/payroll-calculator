@@ -31,9 +31,15 @@ for (const method of ['get', 'post', 'put', 'delete']) {
 const MAX_WORKERS = 200;
 const MAX_NAME = 80;
 
-/** Weeks a worker is allowed to report: the current one and the one before. */
-function offeredWeeks() {
-  const current = currentWeekOf();
+/**
+ * Weeks a worker is allowed to report: the one the owner's list is on, plus the
+ * one before it as a grace period for late submissions.
+ *
+ * Anchored to the list rather than to today's date, so the form, the reminder
+ * and the owner's inbox always name the same week.
+ */
+function offeredWeeks(list) {
+  const current = isValidISODate(list?.week_of) ? list.week_of : currentWeekOf();
   const previous = addWeeks(current, -1);
   return [
     { weekOf: current, label: formatWeekRange(current), isCurrent: true },
@@ -79,6 +85,9 @@ router.put('/lists/:listId', rateLimit({ windowMs: 60_000, max: 30 }), async (re
   const { listId } = req.params;
   const name = String(req.body?.name ?? '').trim().slice(0, MAX_NAME);
   const rawWorkers = Array.isArray(req.body?.workers) ? req.body.workers : [];
+  // The app's active week. It, not the server's clock, decides which week
+  // workers report against.
+  const weekOf = isValidISODate(req.body?.weekOf) ? req.body.weekOf : null;
 
   if (!name) return res.status(400).json({ error: 'Falta el nombre de la lista.' });
   if (rawWorkers.length > MAX_WORKERS) {
@@ -96,7 +105,7 @@ router.put('/lists/:listId', rateLimit({ windowMs: 60_000, max: 30 }), async (re
     if (!secret || secret !== existing.manager_secret) {
       return res.status(403).json({ error: 'Credencial incorrecta para esta lista.' });
     }
-    const updated = await upsertList({ id: listId, name }, workers);
+    const updated = await upsertList({ id: listId, name, weekOf }, workers);
     return res.json({
       listId,
       token: updated.token,
@@ -106,7 +115,7 @@ router.put('/lists/:listId', rateLimit({ windowMs: 60_000, max: 30 }), async (re
   }
 
   const created = await upsertList(
-    { id: listId, name, token: newToken(), managerSecret: newSecret() },
+    { id: listId, name, weekOf, token: newToken(), managerSecret: newSecret() },
     workers
   );
   res.status(201).json({
@@ -223,7 +232,7 @@ router.get('/form/:token', rateLimit({ windowMs: 60_000, max: 60 }), async (req,
   const list = await getListByToken(req.params.token);
   if (!list) return res.status(404).json({ error: 'Este enlace no es válido.' });
 
-  const weeks = offeredWeeks();
+  const weeks = offeredWeeks(list);
   const alreadySubmitted = {};
   for (const week of weeks) {
     for (const s of await latestSubmissions(list.id, week.weekOf)) {
@@ -255,7 +264,7 @@ router.post('/form/:token/submit', rateLimit({ windowMs: 60_000, max: 20 }), asy
 
   // Only the weeks the form offers are accepted, so a stale tab cannot write
   // into an arbitrary week.
-  if (!offeredWeeks().some(w => w.weekOf === weekOf)) {
+  if (!offeredWeeks(list).some(w => w.weekOf === weekOf)) {
     return res.status(400).json({ error: 'Esa semana ya no se puede enviar.' });
   }
 

@@ -157,3 +157,42 @@ button.link {
   .banner.info { background: #1e2547; color: #c6d0ff; }
   .banner.bad { background: #33201f; color: #ff9d94; }
 }
+
+/* ---- Week banner ----
+   The single most important thing on the page: which week these hours are for.
+   A worker who fills in the wrong week sends correct numbers against wrong
+   dates, and nothing downstream can detect that. */
+.week-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.75rem 1rem;
+  margin: 0 0 1rem;
+  border-radius: 12px;
+  border: 2px solid var(--ok);
+  background: #e6f5ec;
+}
+
+.week-banner strong { font-size: 1.05rem; color: var(--ok); }
+.week-banner span { font-size: 0.95rem; }
+
+/* A week other than the current one gets a warning colour, not a quiet note. */
+.week-banner.is-other {
+  border-color: #b8860b;
+  background: #fdf3d8;
+}
+
+.week-banner.is-other strong { color: #8a6100; }
+
+.howto {
+  margin: 0 0 0.9rem;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+@media (prefers-color-scheme: dark) {
+  .week-banner { background: #16301f; }
+  .week-banner.is-other { background: #2e2410; }
+  .week-banner.is-other strong { color: #f0c877; }
+}

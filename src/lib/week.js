@@ -9,5 +9,9 @@ export {
   addWeeks,
   datesForWeek,
   formatWeekRange,
-  formatDayHeader
+  formatDayHeader,
+  relativeWeekName,
+  fullWeekLabel,
+  formatToday,
+  selectableWeeks
 } from '../../shared/week.js';

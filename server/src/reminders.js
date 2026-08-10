@@ -1,4 +1,4 @@
-import { currentWeekOf, formatWeekRange, datesForWeek, toISODate } from '../../shared/week.js';
+import { currentWeekOf, formatWeekRange, datesForWeek, toISODate, isValidISODate } from '../../shared/week.js';
 import { DAYS } from '../../shared/hours-rules.js';
 import {
   allLists,
@@ -73,7 +73,10 @@ export function reminderMessage(weekOf, link) {
  * the reminder is simply true until the owner marks it done.
  */
 export function reminderState(list) {
-  const weekOf = currentWeekOf();
+  // The owner's list is the source of truth for which week is being collected.
+  // Computing it here independently produced a reminder that named a different
+  // week than the app's own inbox. Falls back for lists synced before this.
+  const weekOf = isValidISODate(list?.week_of) ? list.week_of : currentWeekOf();
   const today = new Date().getDay();
 
   const alreadySent = list.reminded_week === weekOf;
@@ -129,16 +132,30 @@ export async function sendReminderPush(list, baseUrl, { test = false, slot = nul
 
   const link = `${baseUrl}/t/${list.token}`;
 
-  // The body is ONLY the message to forward, nothing else. WhatsApp broadcast
-  // lists cannot be opened from a URL, so sending always ends in a manual paste
-  // into the saved list — which means long-pressing this notification to copy
-  // it has to yield exactly the right text, with no surrounding commentary.
-  const body = reminderMessage(state.weekOf, link);
+  // Who is actually outstanding, by name. "2 of 5" tells the owner there is a
+  // problem; naming them tells the owner who to go and ask.
+  const names = missing.map(w => w.name);
+  const shown = names.slice(0, 4).join(', ');
+  const whoIsMissing =
+    missing.length === workers.length
+      ? 'Nadie ha enviado sus horas todavía.'
+      : `Faltan: ${shown}${names.length > 4 ? ` y ${names.length - 4} más` : ''}.`;
 
-  // Context goes in the title instead, where it cannot contaminate a copy.
+  // The body is a status report rather than the raw message: the "Copiar
+  // mensaje" button opens a page that puts the message on the clipboard, so
+  // the notification itself is free to say something more useful.
+  const body = [
+    test ? 'ESTO ES UNA PRUEBA.' : null,
+    whoIsMissing,
+    `Semana del ${state.weekLabel}.`,
+    'Toca "Copiar mensaje" y pégalo en tu lista de difusión.'
+  ]
+    .filter(Boolean)
+    .join('\n');
+
   const title =
     (test ? 'PRUEBA - ' : '') +
-    `Horas ${list.name} - faltan ${missing.length} de ${workers.length}`;
+    `${list.name}: faltan ${missing.length} de ${workers.length}`;
 
   const ackToken = test ? null : newSecret();
 

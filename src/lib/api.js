@@ -33,11 +33,13 @@ async function request(path, { method = 'GET', body, managerSecret } = {}) {
  * Push the roster so the form can show the name picker.
  * Only ids and names are sent — wages stay in this browser.
  */
-export function syncList({ listId, name, workers, managerSecret }) {
+export function syncList({ listId, name, weekOf, workers, managerSecret }) {
   return request(`/api/lists/${encodeURIComponent(listId)}`, {
     method: 'PUT',
     managerSecret,
-    body: { name, workers: workers.map(w => ({ id: w.id, name: w.name })) }
+    // weekOf goes with it so the form, the reminder and this app all name the
+    // same week. Without it the server guesses from its own clock and drifts.
+    body: { name, weekOf, workers: workers.map(w => ({ id: w.id, name: w.name })) }
   });
 }
 

@@ -90,6 +90,27 @@ export default function FormPanel({ slot, weekOf, workers, onServerChange, onApp
     refresh();
   }, [refresh]);
 
+  // Push the active week to the server whenever it changes, so the worker form,
+  // the reminder message and this inbox always name the same week. Without it
+  // the server keeps offering the old week after "Empezar nueva semana".
+  // `workers` is read from the closure rather than declared as a dependency:
+  // its identity changes on every keystroke, which would sync constantly.
+  const syncedWeek = useRef(null);
+  useEffect(() => {
+    if (!server || !weekOf || syncedWeek.current === weekOf) return;
+    syncedWeek.current = weekOf;
+
+    syncList({
+      listId: slot.id,
+      name: slot.name,
+      weekOf,
+      workers: workers.filter(w => w.name.trim()),
+      managerSecret: server.managerSecret
+    })
+      .then(refresh)
+      .catch(err => setError(err.message));
+  }, [server, weekOf, slot.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const namedWorkers = workers.filter(w => w.name.trim());
 
   const handleActivate = async () => {
@@ -99,6 +120,7 @@ export default function FormPanel({ slot, weekOf, workers, onServerChange, onApp
       const result = await syncList({
         listId: slot.id,
         name: slot.name,
+        weekOf,
         workers: namedWorkers,
         managerSecret: server?.managerSecret
       });

@@ -750,3 +750,31 @@ input.has-issue:focus {
     color: #a12020;
   }
 }
+
+.week-behind { color: #f0c877; opacity: 1; }
+
+@media (prefers-color-scheme: light) {
+  .week-behind { color: #8a6100; }
+}
+
+/* ---- Week clarity ---- */
+.week-bar.is-off-week {
+  border-color: #d9a441;
+  background-color: #d9a4410f;
+}
+
+.week-chip {
+  display: inline-block;
+  margin-right: 0.5rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  background-color: #d9a441;
+  color: #1a1a1a;
+  font-size: 0.72rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.week-chip.is-current { background-color: #1a8a4a; color: #fff; }
+
+.week-picker select { min-width: 15rem; }

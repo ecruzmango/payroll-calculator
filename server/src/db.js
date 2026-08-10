@@ -67,11 +67,12 @@ export async function initSchema() {
   const info = await db.execute('PRAGMA table_info(lists)');
   const columns = info.rows.map(r => r.name);
 
+  //   week_of       — the payroll week the owner's list is on (source of truth)
   //   reminded_week — the week the owner marked as sent
   //   notified_week — legacy: the week a push fired for, before per-slot times
   //   notified_slot — the last "week|date|hour" a push fired for
   //   ack_token     — single-use token behind the "Ya lo envié" button
-  for (const column of ['reminded_week', 'notified_week', 'notified_slot', 'ack_token']) {
+  for (const column of ['week_of', 'reminded_week', 'notified_week', 'notified_slot', 'ack_token']) {
     if (!columns.includes(column)) {
       await db.execute(`ALTER TABLE lists ADD COLUMN ${column} TEXT`);
     }
@@ -101,12 +102,17 @@ export async function upsertList(list, workers) {
   const existing = await getListById(list.id);
 
   const statements = existing
-    ? [{ sql: 'UPDATE lists SET name = ?, updated_at = ? WHERE id = ?', args: [list.name, now, list.id] }]
+    ? [
+        {
+          sql: 'UPDATE lists SET name = ?, week_of = ?, updated_at = ? WHERE id = ?',
+          args: [list.name, list.weekOf ?? existing.week_of, now, list.id]
+        }
+      ]
     : [
         {
-          sql: `INSERT INTO lists (id, name, token, manager_secret, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)`,
-          args: [list.id, list.name, list.token, list.managerSecret, now, now]
+          sql: `INSERT INTO lists (id, name, week_of, token, manager_secret, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          args: [list.id, list.name, list.weekOf ?? null, list.token, list.managerSecret, now, now]
         }
       ];
 
