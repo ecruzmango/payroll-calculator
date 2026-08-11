@@ -150,77 +150,119 @@ function renderHoursForm() {
   const dates = datesForWeek(state.weekOf);
   const prior = priorSubmission();
 
-  const hours = derivedHours();
-  const total = totalHours(hours);
-  const hasError = Object.keys(state.errors).length > 0;
-  const nothingEntered = state.data.days.every(
-    d => !state.times[d]?.start && !state.times[d]?.end
-  );
+  const totalNode = el('span', { id: 'total' }, '0 h');
+  const sendBtn = el('button', { className: 'primary', id: 'send' }, 'Enviar mis horas');
+  sendBtn.addEventListener('click', submit);
 
   /**
-   * One day: when they started, when they finished, and the resulting hours.
+   * One day, built ONCE and then patched in place.
    *
-   * `input type="time"` rather than two long <select>s. On a phone it opens the
-   * native hour/minute picker — the same "choose an hour and a minute" the owner
-   * asked for — without a 96-item list to scroll, and it handles 12h/24h
-   * display according to the worker's own phone settings.
+   * Re-rendering on every input event destroyed the element the phone's time
+   * picker was attached to, so the picker slammed shut the moment the wheel
+   * moved — iOS fires `input` continuously while scrolling. Nothing here
+   * replaces an input; only text and classes change.
    */
-  const dayRows = state.data.days.map(day => {
+  function makeDay(day) {
     const date = dates[day];
-    const issue = state.errors[day];
-    const worked = hoursFromRange(state.times[day]?.start, state.times[day]?.end);
 
-    const timeField = which =>
+    const field = which =>
       el('input', {
         type: 'time',
         value: state.times[day]?.[which] ?? '',
-        className: issue ? 'bad' : '',
         'aria-label': `${which === 'start' ? 'Entrada' : 'Salida'} ${DAY_LABELS[day]}`,
         oninput: e => {
           state.times[day] = { ...state.times[day], [which]: e.target.value };
-          const check = validateTimesMap(state.times);
-          state.errors = check.errors;
-          renderKeepingFocus(e.target);
+          refresh();
         }
       });
 
-    return el(
+    const startInput = field('start');
+    const endInput = field('end');
+    const hoursNode = el('span', { className: 'day-hours' }, '');
+    const noteNode = el('div', { className: 'day-note' }, '');
+    const errorNode = el('div', { className: 'day-error' }, '');
+
+    // Emptying a time field on a phone is fiddly, and "I did not work that day"
+    // needs to be one deliberate tap rather than a fight with the picker.
+    const clearBtn = el(
+      'button',
+      {
+        type: 'button',
+        className: 'day-clear',
+        title: 'No trabajé este día',
+        'aria-label': `Borrar ${DAY_LABELS[day]}`,
+        onclick: () => {
+          state.times[day] = { start: '', end: '' };
+          startInput.value = '';
+          endInput.value = '';
+          refresh();
+        }
+      },
+      '✕'
+    );
+
+    const node = el(
       'div',
-      { className: `day-block${worked ? ' has-hours' : ''}${issue ? ' has-error' : ''}` },
+      { className: 'day-block' },
       el(
         'div',
         { className: 'day-head' },
         el('strong', {}, DAY_LABELS[day]),
         el('span', { className: 'day-date' }, `${date.getDate()}/${date.getMonth() + 1}`),
-        el(
-          'span',
-          { className: 'day-hours' },
-          worked ? `${formatTotal(worked)} h` : ''
-        )
+        hoursNode,
+        clearBtn
       ),
       el(
         'div',
         { className: 'time-pair' },
-        el('label', {}, el('span', {}, 'Entró'), timeField('start')),
-        el('label', {}, el('span', {}, 'Salió'), timeField('end'))
+        el('label', {}, el('span', {}, 'Entró'), startInput),
+        el('label', {}, el('span', {}, 'Salió'), endInput)
       ),
-      crossesMidnight(state.times[day]?.start, state.times[day]?.end)
-        ? el('div', { className: 'day-note' }, 'Termina al día siguiente')
-        : null,
-      issue ? el('div', { className: 'day-error' }, issue) : null
+      noteNode,
+      errorNode
     );
-  });
 
-  const sendBtn = el(
-    'button',
-    {
-      className: 'primary',
-      id: 'send',
-      disabled: state.sending || hasError || nothingEntered
-    },
-    state.sending ? 'Enviando…' : prior ? 'Actualizar mis horas' : 'Enviar mis horas'
-  );
-  sendBtn.addEventListener('click', submit);
+    const update = check => {
+      const issue = check.errors[day];
+      const worked = hoursFromRange(state.times[day]?.start, state.times[day]?.end);
+      const filled = Boolean(state.times[day]?.start || state.times[day]?.end);
+
+      hoursNode.textContent = worked ? `${formatTotal(worked)} h` : '';
+      noteNode.textContent = crossesMidnight(state.times[day]?.start, state.times[day]?.end)
+        ? 'Termina al día siguiente'
+        : '';
+      errorNode.textContent = issue ?? '';
+      node.className = `day-block${worked ? ' has-hours' : ''}${issue ? ' has-error' : ''}`;
+      startInput.className = issue ? 'bad' : '';
+      endInput.className = issue ? 'bad' : '';
+      clearBtn.hidden = !filled;
+    };
+
+    return { node, update };
+  }
+
+  const days = state.data.days.map(makeDay);
+
+  /** Recompute everything derived and patch the DOM. Never rebuilds inputs. */
+  function refresh() {
+    const check = validateTimesMap(state.times);
+    state.errors = check.errors;
+
+    days.forEach(d => d.update(check));
+
+    const total = totalHours(check.hours);
+    totalNode.textContent = `${formatTotal(total)} h`;
+
+    const nothing = state.data.days.every(d => !state.times[d]?.start && !state.times[d]?.end);
+    sendBtn.disabled = state.sending || !check.ok || nothing;
+    sendBtn.textContent = state.sending
+      ? 'Enviando…'
+      : prior
+        ? 'Actualizar mis horas'
+        : 'Enviar mis horas';
+  }
+
+  refresh();
 
   return [
     el('h1', {}, `Hola, ${worker.name}`),
@@ -233,7 +275,7 @@ function renderHoursForm() {
     el(
       'p',
       { className: 'howto' },
-      'Elige a qué hora entraste y saliste cada día. Deja el día vacío si no trabajaste.'
+      'Elige a qué hora entraste y saliste cada día. Usa ✕ si no trabajaste ese día.'
     ),
 
     state.error ? el('div', { className: 'banner bad' }, state.error) : null,
@@ -249,12 +291,12 @@ function renderHoursForm() {
     el(
       'div',
       { className: 'card' },
-      dayRows,
+      days.map(d => d.node),
       el(
         'div',
         { className: 'total-line' },
         el('span', {}, 'Total'),
-        el('span', { id: 'total' }, `${formatTotal(total)} h`)
+        totalNode
       )
     ),
 
@@ -325,19 +367,6 @@ function renderDone(result) {
 
 const formatTotal = n => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, ''));
 
-/**
- * Re-render, then put the cursor back where it was.
- * Changing one time changes that day's hours, the running total and possibly an
- * error message, so a full re-render is the simplest correct answer — as long
- * as focus survives it.
- */
-function renderKeepingFocus(activeEl) {
-  const label = activeEl?.getAttribute('aria-label');
-  render();
-  if (!label) return;
-  const again = document.querySelector(`[aria-label="${CSS.escape(label)}"]`);
-  again?.focus();
-}
 
 function render(node) {
   const content = node ?? (state.workerId ? renderHoursForm() : renderNamePicker());

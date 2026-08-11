@@ -816,7 +816,7 @@ input.has-issue:focus {
 
 .review-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
   gap: 0.5rem;
 }
 
@@ -850,3 +850,49 @@ input.has-issue:focus {
 @media (prefers-color-scheme: light) {
   .review, .review-day { border-color: #ddd; }
 }
+
+/* ---- Review: editing the times ----
+   Wide screens only in practice — the owner reviews at a computer, so the
+   seven days sit side by side and the whole week is comparable at a glance. */
+.review-day-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.review-day-hours { font-size: 0.8rem; font-weight: 700; opacity: 0.8; }
+.review-day-hours.is-edited { color: #9aa8ff; }
+
+.review-times-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.review-times-edit label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.review-times-edit label span {
+  width: 2.6rem;
+  flex: none;
+  font-size: 0.68rem;
+  opacity: 0.6;
+}
+
+.review-times-edit input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.3em 0.35em;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.review-original { font-size: 0.68rem; opacity: 0.6; }
+.review-issue { font-size: 0.68rem; color: #ff9d9d; }
+.review-day.has-issue { border-color: #ff6b6b; }
+
+.inbox-actions { align-items: center; }

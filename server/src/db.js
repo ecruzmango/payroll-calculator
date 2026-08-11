@@ -173,13 +173,14 @@ export async function latestSubmissions(listId, weekOf) {
   }));
 }
 
-export async function markApplied(listId, ids) {
+/** Mark submissions applied, or clear the mark when undoing. */
+export async function markApplied(listId, ids, applied = true) {
   if (!ids.length) return;
-  const now = Date.now();
+  const stamp = applied ? Date.now() : null;
   await db.batch(
     ids.map(id => ({
       sql: 'UPDATE submissions SET applied_at = ? WHERE id = ? AND list_id = ?',
-      args: [now, id, listId]
+      args: [stamp, id, listId]
     })),
     'write'
   );

@@ -1,6 +1,14 @@
 import { useState } from 'react';
 import { DAYS, DAY_LABELS } from '../constants.js';
-import { totalHours, formatTime, isPartialNumber, hoursIssue } from '../../shared/hours-rules.js';
+import {
+  totalHours,
+  formatTime,
+  hoursFromRange,
+  crossesMidnight,
+  validateTimesMap,
+  isPartialNumber,
+  hoursIssue
+} from '../../shared/hours-rules.js';
 
 const timeAgo = ts => {
   const mins = Math.round((Date.now() - ts) / 60000);
@@ -12,28 +20,43 @@ const timeAgo = ts => {
 };
 
 const show = v => (v === '' || v === undefined || v === null ? '–' : v);
+const emptyTimes = () => Object.fromEntries(DAYS.map(d => [d, { start: '', end: '' }]));
 
 /**
- * One submitted week, collapsed to a single line until the owner opens it.
+ * One submitted week, collapsed to a line until the owner opens it.
  *
- * Workers sometimes round their hours up, so the owner needs to adjust before
- * the numbers reach payroll. Editing happens here and only affects what gets
- * written into the table — the worker's original submission is never
- * overwritten, so there is always a record of what they actually claimed.
+ * The owner adjusts the *times*, not a bare total — "you left at 15:00, not
+ * 15:30" is a conversation you can have with a worker, whereas "I changed your
+ * 8.5 to 8" is not. Hours are always derived from the times, so the two can
+ * never disagree.
+ *
+ * Editing only affects what is written into the table. The worker's original
+ * submission is never overwritten, so there is always a record of what was
+ * claimed versus what was paid.
  */
-export default function SubmissionRow({ submission, workerName, onApply }) {
+export default function SubmissionRow({ submission, workerName, onApply, onUndo }) {
   const [open, setOpen] = useState(false);
-  const [edited, setEdited] = useState(null); // null until the owner changes something
+  const [editedTimes, setEditedTimes] = useState(null);
+  const [editedHours, setEditedHours] = useState(null); // legacy rows without times
 
-  const hours = edited ?? submission.hours;
-  const changed = edited !== null && DAYS.some(d => (edited[d] ?? '') !== (submission.hours[d] ?? ''));
+  // Older submissions predate time capture and can only be edited as numbers.
+  const hasTimes = Boolean(submission.times);
+  const times = editedTimes ?? { ...emptyTimes(), ...(submission.times ?? {}) };
+  const check = validateTimesMap(times);
+
+  const hours = hasTimes ? check.hours : (editedHours ?? submission.hours);
   const total = totalHours(hours);
   const originalTotal = totalHours(submission.hours);
-  const invalid = DAYS.some(d => hoursIssue(hours[d]));
+  const changed = Math.abs(total - originalTotal) > 0.001;
+  const invalid = hasTimes ? !check.ok : DAYS.some(d => hoursIssue(hours[d]));
 
-  const setDay = (day, value) => {
-    if (!isPartialNumber(value)) return;
-    setEdited({ ...(edited ?? submission.hours), [day]: value });
+  const setTime = (day, which, value) => {
+    setEditedTimes({ ...times, [day]: { ...times[day], [which]: value } });
+  };
+
+  const reset = () => {
+    setEditedTimes(null);
+    setEditedHours(null);
   };
 
   const apply = () => {
@@ -42,7 +65,7 @@ export default function SubmissionRow({ submission, workerName, onApply }) {
   };
 
   return (
-    <div className={`inbox-row${submission.appliedAt ? ' is-applied' : ''}${open ? ' is-open' : ''}`}>
+    <div className={`inbox-row${submission.appliedAt ? ' is-applied' : ''}`}>
       <div className="inbox-summary">
         <div className="inbox-who">
           <strong>{workerName}</strong>
@@ -67,7 +90,14 @@ export default function SubmissionRow({ submission, workerName, onApply }) {
         </div>
 
         {submission.appliedAt ? (
-          <span className="applied-mark">✓ Aplicado</span>
+          <div className="inbox-actions">
+            <span className="applied-mark">✓ Aplicado</span>
+            {/* Applying is one click and writes straight into payroll, so it
+                has to be reversible rather than merely confirmed. */}
+            <button className="btn-secondary btn-small" onClick={() => onUndo(submission)}>
+              Deshacer
+            </button>
+          </div>
         ) : (
           <div className="inbox-actions">
             <button className="btn-secondary btn-small" onClick={() => setOpen(o => !o)}>
@@ -83,44 +113,92 @@ export default function SubmissionRow({ submission, workerName, onApply }) {
       {open && (
         <div className="review">
           <p className="review-help">
-            Ajusta las horas si hace falta. Se guarda lo que apliques; lo que envió el
-            trabajador no se modifica.
+            {hasTimes
+              ? 'Ajusta la hora de entrada o salida si hace falta. Las horas se recalculan solas y lo que envió el trabajador no se modifica.'
+              : 'Este envío no incluye horarios. Ajusta las horas directamente.'}
           </p>
 
           <div className="review-grid">
             {DAYS.map(day => {
-              const t = submission.times?.[day];
-              const issue = hoursIssue(hours[day]);
+              const issue = check.errors[day];
+              const worked = hasTimes
+                ? hoursFromRange(times[day]?.start, times[day]?.end)
+                : Number(hours[day]) || 0;
               const wasChanged = (hours[day] ?? '') !== (submission.hours[day] ?? '');
+              const original = submission.times?.[day];
 
               return (
-                <div key={day} className="review-day">
-                  <div className="review-day-name">{DAY_LABELS[day]}</div>
-                  <div className="review-times">
-                    {t ? `${formatTime(t.start)} – ${formatTime(t.end)}` : '—'}
+                <div key={day} className={`review-day${issue ? ' has-issue' : ''}`}>
+                  <div className="review-day-head">
+                    <span className="review-day-name">{DAY_LABELS[day]}</span>
+                    <span className={`review-day-hours${wasChanged ? ' is-edited' : ''}`}>
+                      {worked ? `${worked} h` : '—'}
+                    </span>
                   </div>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    className={issue ? 'has-issue' : wasChanged ? 'is-edited' : ''}
-                    title={issue ?? ''}
-                    value={hours[day] ?? ''}
-                    placeholder="0"
-                    onChange={e => setDay(day, e.target.value)}
-                  />
+
+                  {hasTimes ? (
+                    <>
+                      {/* Stacked, not side by side: a time input with its
+                          picker icon needs ~110px, and two of those do not fit
+                          in a seventh of the card — they render as "07:". */}
+                      <div className="review-times-edit">
+                        <label>
+                          <span>Entró</span>
+                          <input
+                            type="time"
+                            value={times[day]?.start ?? ''}
+                            aria-label={`Entrada ${DAY_LABELS[day]}`}
+                            onChange={e => setTime(day, 'start', e.target.value)}
+                          />
+                        </label>
+                        <label>
+                          <span>Salió</span>
+                          <input
+                            type="time"
+                            value={times[day]?.end ?? ''}
+                            aria-label={`Salida ${DAY_LABELS[day]}`}
+                            onChange={e => setTime(day, 'end', e.target.value)}
+                          />
+                        </label>
+                      </div>
+                      {/* What the worker actually put, so the owner can see
+                          exactly what they changed and by how much. */}
+                      {wasChanged && original && (
+                        <div className="review-original">
+                          Envió {formatTime(original.start)} – {formatTime(original.end)}
+                        </div>
+                      )}
+                      {crossesMidnight(times[day]?.start, times[day]?.end) && (
+                        <div className="review-original">Termina al día siguiente</div>
+                      )}
+                      {issue && <div className="review-issue">{issue}</div>}
+                    </>
+                  ) : (
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={hours[day] ?? ''}
+                      placeholder="0"
+                      onChange={e =>
+                        isPartialNumber(e.target.value) &&
+                        setEditedHours({ ...hours, [day]: e.target.value })
+                      }
+                    />
+                  )}
                 </div>
               );
             })}
           </div>
 
           <div className="review-foot">
-            {changed && (
-              <button className="btn-secondary btn-small" onClick={() => setEdited(null)}>
+            {(editedTimes || editedHours) && (
+              <button className="btn-secondary btn-small" onClick={reset}>
                 Deshacer cambios
               </button>
             )}
             <span className="review-total">
               Total <strong>{total} h</strong>
+              {changed && <span className="was"> antes {originalTotal} h</span>}
             </span>
             <button onClick={apply} disabled={invalid}>
               Aplicar a la tabla

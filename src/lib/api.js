@@ -72,10 +72,10 @@ export function markReminderSent({ listId, managerSecret }) {
   });
 }
 
-export function markApplied({ listId, managerSecret, ids }) {
+export function markApplied({ listId, managerSecret, ids, applied = true }) {
   return request(`/api/lists/${encodeURIComponent(listId)}/submissions/applied`, {
     method: 'POST',
     managerSecret,
-    body: { ids }
+    body: { ids, applied }
   });
 }

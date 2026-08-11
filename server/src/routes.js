@@ -221,8 +221,10 @@ router.delete('/lists/:listId', requireManager, async (req, res) => {
 
 router.post('/lists/:listId/submissions/applied', requireManager, async (req, res) => {
   const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).filter(Number.isInteger);
-  await markApplied(req.list.id, ids);
-  res.json({ applied: ids.length });
+  // `applied: false` undoes it, for when the owner hits Aplicar by accident.
+  const applied = req.body?.applied !== false;
+  await markApplied(req.list.id, ids, applied);
+  res.json({ applied: applied ? ids.length : 0 });
 });
 
 // ---- Public (worker) endpoints -------------------------------------------

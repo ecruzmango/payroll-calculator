@@ -68,7 +68,7 @@ h2 { font-size: 1.15rem; margin: 1.4rem 0 0.6rem; }
    fields plus a label do not fit side by side legibly, and a day that was
    worked should look different at a glance from one that was not. */
 .day-block {
-  padding: 0.7rem 0;
+  padding: 0.5rem 0;
   border-bottom: 1px solid var(--line);
 }
 
@@ -76,12 +76,12 @@ h2 { font-size: 1.15rem; margin: 1.4rem 0 0.6rem; }
 
 .day-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.5rem;
-  margin-bottom: 0.45rem;
+  margin-bottom: 0.35rem;
 }
 
-.day-head strong { font-size: 1.05rem; }
+.day-head strong { font-size: 1rem; }
 .day-date { color: var(--muted); font-size: 0.85rem; }
 
 /* The computed result, pushed right so the eye can scan the column. */
@@ -92,7 +92,7 @@ h2 { font-size: 1.15rem; margin: 1.4rem 0 0.6rem; }
   font-variant-numeric: tabular-nums;
 }
 
-.time-pair { display: flex; gap: 0.6rem; }
+.time-pair { display: flex; gap: 0.5rem; }
 
 .time-pair label {
   flex: 1;
@@ -101,20 +101,22 @@ h2 { font-size: 1.15rem; margin: 1.4rem 0 0.6rem; }
   gap: 0.2rem;
 }
 
-.time-pair label span { font-size: 0.78rem; color: var(--muted); }
+.time-pair label span { font-size: 0.72rem; color: var(--muted); }
 
 .time-pair input {
   width: 100%;
-  padding: 0.7rem;
-  font-size: 1.1rem;
+  /* Kept close to the 44px tap target minimum without dominating the screen:
+     seven of these plus headers has to fit in a phone's viewport. */
+  padding: 0.5rem 0.4rem;
+  font-size: 1rem;
   font-family: inherit;
   text-align: center;
-  border: 2px solid var(--line);
-  border-radius: 10px;
+  border: 1.5px solid var(--line);
+  border-radius: 9px;
   background: #fff;
   color: var(--ink);
-  /* iOS renders an empty time input very short without this. */
-  min-height: 3rem;
+  min-height: 2.75rem;
+  box-sizing: border-box;
 }
 
 .time-pair input:focus { border-color: var(--brand); outline: none; }
@@ -231,3 +233,25 @@ button.link {
   .week-banner.is-other { background: #2e2410; }
   .week-banner.is-other strong { color: #f0c877; }
 }
+
+/* Clearing a day: small, quiet, and only present when there is something to
+   clear, so it never invites a stray tap on an empty day. */
+.day-clear {
+  width: auto;
+  margin: 0;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.day-clear[hidden] { display: none; }
+.day-clear:active { background: var(--line); }
+
+/* Empty text nodes would otherwise leave a gap under every day. */
+.day-note:empty,
+.day-error:empty { display: none; }

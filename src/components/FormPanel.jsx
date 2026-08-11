@@ -199,11 +199,44 @@ export default function FormPanel({ slot, weekOf, workers, onServerChange, onApp
     }
   };
 
+  // What the table held before each submission was applied, so Aplicar can be
+  // taken back. Applying writes straight into payroll off a single click, and a
+  // confirm dialog on every one would just be trained away.
+  const undoable = useRef(new Map());
+
   const handleApply = async (submission, hours = submission.hours) => {
+    const before = workers.find(w => w.id === submission.workerId)?.hours;
+    if (before) undoable.current.set(submission.id, before);
+
     onApply(submission.workerId, hours);
     try {
       await markApplied({ listId: slot.id, managerSecret: server.managerSecret, ids: [submission.id] });
       await refresh();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleUndo = async submission => {
+    const before = undoable.current.get(submission.id);
+    if (before) {
+      onApply(submission.workerId, before);
+      undoable.current.delete(submission.id);
+    }
+    try {
+      await markApplied({
+        listId: slot.id,
+        managerSecret: server.managerSecret,
+        ids: [submission.id],
+        applied: false
+      });
+      await refresh();
+      if (!before) {
+        setNotice(
+          'Marcado como no aplicado. Las horas en la tabla no cambiaron: ' +
+            'esta sesión no tenía guardado el valor anterior.'
+        );
+      }
     } catch (err) {
       setError(err.message);
     }
@@ -214,7 +247,11 @@ export default function FormPanel({ slot, weekOf, workers, onServerChange, onApp
     if (!pending.length) return;
     if (!window.confirm(`Se aplicarán ${pending.length} envíos a la tabla. ¿Continuar?`)) return;
 
-    pending.forEach(s => onApply(s.workerId, s.hours));
+    pending.forEach(s => {
+      const before = workers.find(w => w.id === s.workerId)?.hours;
+      if (before) undoable.current.set(s.id, before);
+      onApply(s.workerId, s.hours);
+    });
     try {
       await markApplied({
         listId: slot.id,
@@ -368,6 +405,7 @@ export default function FormPanel({ slot, weekOf, workers, onServerChange, onApp
               submission={s}
               workerName={nameOf(s.workerId)}
               onApply={handleApply}
+              onUndo={handleUndo}
             />
           ))}
 
