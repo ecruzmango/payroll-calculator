@@ -20,6 +20,10 @@ const timeAgo = ts => {
 };
 
 const show = v => (v === '' || v === undefined || v === null ? '–' : v);
+// The owner adjusts to the nearest quarter hour; minute-level precision is
+// noise when the point is trimming an over-estimate.
+const QUARTER_HOUR = 15 * 60;
+
 const emptyTimes = () => Object.fromEntries(DAYS.map(d => [d, { start: '', end: '' }]));
 
 /**
@@ -59,10 +63,14 @@ export default function SubmissionRow({ submission, workerName, onApply, onUndo 
     setEditedHours(null);
   };
 
-  const apply = () => {
-    onApply(submission, hours);
-    setOpen(false);
-  };
+  const apply = () => onApply(submission, hours);
+
+  /**
+   * Closes the editor keeping the changes. Deliberately does not apply:
+   * confirming an edit and committing it to payroll are two different
+   * decisions, and merging them meant every correction went straight through.
+   */
+  const doneEditing = () => setOpen(false);
 
   return (
     <div className={`inbox-row${submission.appliedAt ? ' is-applied' : ''}`}>
@@ -103,7 +111,12 @@ export default function SubmissionRow({ submission, workerName, onApply, onUndo 
             <button className="btn-secondary btn-small" onClick={() => setOpen(o => !o)}>
               {open ? 'Cerrar' : 'Revisar'}
             </button>
-            <button className="btn-small" onClick={apply} disabled={invalid}>
+            <button
+              className="btn-small"
+              onClick={apply}
+              disabled={invalid}
+              title={changed ? `Aplica ${total} h (editado) a la tabla` : `Aplica ${total} h a la tabla`}
+            >
               Aplicar
             </button>
           </div>
@@ -146,6 +159,7 @@ export default function SubmissionRow({ submission, workerName, onApply, onUndo 
                           <span>Entró</span>
                           <input
                             type="time"
+                            step={QUARTER_HOUR}
                             value={times[day]?.start ?? ''}
                             aria-label={`Entrada ${DAY_LABELS[day]}`}
                             onChange={e => setTime(day, 'start', e.target.value)}
@@ -155,6 +169,7 @@ export default function SubmissionRow({ submission, workerName, onApply, onUndo 
                           <span>Salió</span>
                           <input
                             type="time"
+                            step={QUARTER_HOUR}
                             value={times[day]?.end ?? ''}
                             aria-label={`Salida ${DAY_LABELS[day]}`}
                             onChange={e => setTime(day, 'end', e.target.value)}
@@ -200,8 +215,8 @@ export default function SubmissionRow({ submission, workerName, onApply, onUndo 
               Total <strong>{total} h</strong>
               {changed && <span className="was"> antes {originalTotal} h</span>}
             </span>
-            <button onClick={apply} disabled={invalid}>
-              Aplicar a la tabla
+            <button onClick={doneEditing} disabled={invalid}>
+              {changed ? 'Guardar cambios' : 'Cerrar'}
             </button>
           </div>
         </div>

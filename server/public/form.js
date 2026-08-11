@@ -20,7 +20,9 @@ const state = {
   times: {},
   errors: {},
   sending: false,
-  error: null
+  error: null,
+  // Errors stay quiet until the worker actually tries to send.
+  attempted: false
 };
 
 const el = (tag, props = {}, ...children) => {
@@ -108,6 +110,7 @@ function loadExistingHours() {
   }
   state.times = times;
   state.errors = {};
+  state.attempted = false;
 }
 
 function priorSubmission() {
@@ -143,6 +146,12 @@ function renderNamePicker() {
   ];
 }
 
+// Typical shift boundaries. Filling these in when a worker first taps an empty
+// field means the phone's picker opens on the right side of noon — an empty
+// time input otherwise starts at 12:00 AM, so "salió" needed two extra spins.
+const DEFAULT_START = '07:00';
+const DEFAULT_END = '17:00';
+
 function renderHoursForm() {
   const worker = state.data.workers.find(w => w.id === state.workerId);
   const week = state.data.weeks.find(w => w.weekOf === state.weekOf);
@@ -151,22 +160,39 @@ function renderHoursForm() {
   const prior = priorSubmission();
 
   const totalNode = el('span', { id: 'total' }, '0 h');
+  const missingNode = el('p', { className: 'missing-hint' }, '');
   const sendBtn = el('button', { className: 'primary', id: 'send' }, 'Enviar mis horas');
-  sendBtn.addEventListener('click', submit);
+  sendBtn.addEventListener('click', () => {
+    // Only now does an unfinished day become an error. Turning inputs red the
+    // instant someone picks a start time tells them they are doing something
+    // wrong when they are simply halfway through.
+    state.attempted = true;
+    refresh();
+
+    const firstBad = state.data.days.find(d => state.errors[d]);
+    if (firstBad) {
+      // Seven days do not fit on screen, so point at the problem rather than
+      // leaving them to hunt for it.
+      document
+        .querySelector(`[aria-label="Entrada ${DAY_LABELS[firstBad]}"]`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    submit();
+  });
 
   /**
    * One day, built ONCE and then patched in place.
    *
    * Re-rendering on every input event destroyed the element the phone's time
    * picker was attached to, so the picker slammed shut the moment the wheel
-   * moved — iOS fires `input` continuously while scrolling. Nothing here
-   * replaces an input; only text and classes change.
+   * moved — iOS fires `input` continuously while scrolling.
    */
   function makeDay(day) {
     const date = dates[day];
 
-    const field = which =>
-      el('input', {
+    const field = (which, fallback) => {
+      const input = el('input', {
         type: 'time',
         value: state.times[day]?.[which] ?? '',
         'aria-label': `${which === 'start' ? 'Entrada' : 'Salida'} ${DAY_LABELS[day]}`,
@@ -176,21 +202,28 @@ function renderHoursForm() {
         }
       });
 
-    const startInput = field('start');
-    const endInput = field('end');
+      input.addEventListener('focus', () => {
+        if (input.value) return;
+        input.value = fallback;
+        state.times[day] = { ...state.times[day], [which]: fallback };
+        refresh();
+      });
+
+      return input;
+    };
+
+    const startInput = field('start', DEFAULT_START);
+    const endInput = field('end', DEFAULT_END);
     const hoursNode = el('span', { className: 'day-hours' }, '');
     const noteNode = el('div', { className: 'day-note' }, '');
-    const errorNode = el('div', { className: 'day-error' }, '');
 
-    // Emptying a time field on a phone is fiddly, and "I did not work that day"
-    // needs to be one deliberate tap rather than a fight with the picker.
+    // A visible words-not-symbols control. The ✕ was both easy to miss and
+    // ambiguous — it could as easily have meant "delete this day".
     const clearBtn = el(
       'button',
       {
         type: 'button',
         className: 'day-clear',
-        title: 'No trabajé este día',
-        'aria-label': `Borrar ${DAY_LABELS[day]}`,
         onclick: () => {
           state.times[day] = { start: '', end: '' };
           startInput.value = '';
@@ -198,7 +231,7 @@ function renderHoursForm() {
           refresh();
         }
       },
-      '✕'
+      'No trabajé'
     );
 
     const node = el(
@@ -218,23 +251,26 @@ function renderHoursForm() {
         el('label', {}, el('span', {}, 'Entró'), startInput),
         el('label', {}, el('span', {}, 'Salió'), endInput)
       ),
-      noteNode,
-      errorNode
+      noteNode
     );
 
     const update = check => {
       const issue = check.errors[day];
       const worked = hoursFromRange(state.times[day]?.start, state.times[day]?.end);
       const filled = Boolean(state.times[day]?.start || state.times[day]?.end);
+      // Red only once they have tried to send; before that it is just a note.
+      const isError = Boolean(issue) && state.attempted;
 
       hoursNode.textContent = worked ? `${formatTotal(worked)} h` : '';
-      noteNode.textContent = crossesMidnight(state.times[day]?.start, state.times[day]?.end)
-        ? 'Termina al día siguiente'
-        : '';
-      errorNode.textContent = issue ?? '';
-      node.className = `day-block${worked ? ' has-hours' : ''}${issue ? ' has-error' : ''}`;
-      startInput.className = issue ? 'bad' : '';
-      endInput.className = issue ? 'bad' : '';
+      noteNode.textContent =
+        issue ??
+        (crossesMidnight(state.times[day]?.start, state.times[day]?.end)
+          ? 'Termina al día siguiente'
+          : '');
+      noteNode.className = `day-note${isError ? ' is-error' : ''}`;
+      node.className = `day-block${worked ? ' has-hours' : ''}`;
+      startInput.className = isError && !state.times[day]?.start ? 'bad' : '';
+      endInput.className = isError && !state.times[day]?.end ? 'bad' : '';
       clearBtn.hidden = !filled;
     };
 
@@ -249,12 +285,22 @@ function renderHoursForm() {
     state.errors = check.errors;
 
     days.forEach(d => d.update(check));
+    totalNode.textContent = `${formatTotal(totalHours(check.hours))} h`;
 
-    const total = totalHours(check.hours);
-    totalNode.textContent = `${formatTotal(total)} h`;
-
+    const incomplete = state.data.days.filter(d => check.errors[d]).map(d => DAY_LABELS[d]);
     const nothing = state.data.days.every(d => !state.times[d]?.start && !state.times[d]?.end);
-    sendBtn.disabled = state.sending || !check.ok || nothing;
+
+    // Naming the unfinished days beats a disabled button with no explanation.
+    missingNode.textContent = incomplete.length
+      ? `Completa la entrada y la salida de: ${incomplete.join(', ')}.`
+      : nothing
+        ? 'Añade al menos un día para enviar.'
+        : '';
+
+    // Deliberately NOT disabled for incomplete days: a dead button explains
+    // nothing, whereas pressing it can say exactly which day is unfinished.
+    sendBtn.disabled = state.sending || nothing;
+    sendBtn.className = `primary${incomplete.length ? ' is-blocked' : ''}`;
     sendBtn.textContent = state.sending
       ? 'Enviando…'
       : prior
@@ -275,7 +321,7 @@ function renderHoursForm() {
     el(
       'p',
       { className: 'howto' },
-      'Elige a qué hora entraste y saliste cada día. Usa ✕ si no trabajaste ese día.'
+      'Elige a qué hora entraste y saliste cada día. Si no trabajaste, toca «No trabajé».'
     ),
 
     state.error ? el('div', { className: 'banner bad' }, state.error) : null,
@@ -292,14 +338,10 @@ function renderHoursForm() {
       'div',
       { className: 'card' },
       days.map(d => d.node),
-      el(
-        'div',
-        { className: 'total-line' },
-        el('span', {}, 'Total'),
-        totalNode
-      )
+      el('div', { className: 'total-line' }, el('span', {}, 'Total'), totalNode)
     ),
 
+    missingNode,
     sendBtn,
 
     el(

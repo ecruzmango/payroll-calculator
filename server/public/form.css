@@ -68,7 +68,7 @@ h2 { font-size: 1.15rem; margin: 1.4rem 0 0.6rem; }
    fields plus a label do not fit side by side legibly, and a day that was
    worked should look different at a glance from one that was not. */
 .day-block {
-  padding: 0.5rem 0;
+  padding: 0.4rem 0;
   border-bottom: 1px solid var(--line);
 }
 
@@ -77,8 +77,8 @@ h2 { font-size: 1.15rem; margin: 1.4rem 0 0.6rem; }
 .day-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.35rem;
+  gap: 0.45rem;
+  margin-bottom: 0.25rem;
 }
 
 .day-head strong { font-size: 1rem; }
@@ -98,24 +98,25 @@ h2 { font-size: 1.15rem; margin: 1.4rem 0 0.6rem; }
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.1rem;
+  min-width: 0;
 }
 
-.time-pair label span { font-size: 0.72rem; color: var(--muted); }
+.time-pair label span { font-size: 0.68rem; color: var(--muted); line-height: 1.2; }
 
 .time-pair input {
   width: 100%;
-  /* Kept close to the 44px tap target minimum without dominating the screen:
-     seven of these plus headers has to fit in a phone's viewport. */
-  padding: 0.5rem 0.4rem;
-  font-size: 1rem;
+  /* 40px: still a comfortable tap target, but seven days of two fields plus
+     headers now fits a phone screen without endless scrolling. */
+  padding: 0.35rem 0.3rem;
+  font-size: 0.95rem;
   font-family: inherit;
   text-align: center;
   border: 1.5px solid var(--line);
-  border-radius: 9px;
+  border-radius: 8px;
   background: #fff;
   color: var(--ink);
-  min-height: 2.75rem;
+  height: 2.5rem;
   box-sizing: border-box;
 }
 
@@ -124,11 +125,24 @@ h2 { font-size: 1.15rem; margin: 1.4rem 0 0.6rem; }
 
 .day-block.has-hours .day-head strong { color: var(--ok); }
 
+/* An unfinished day is a note, not an alarm — until they press send, at which
+   point it turns red along with the empty field. */
 .day-note {
-  margin-top: 0.35rem;
-  font-size: 0.8rem;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
   color: var(--muted);
 }
+
+.day-note.is-error { color: var(--bad); font-weight: 600; }
+
+.missing-hint {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.missing-hint:empty { display: none; }
 
 .day-error { color: var(--bad); font-size: 0.8rem; padding: 0 0 0.4rem; }
 
@@ -234,19 +248,20 @@ button.link {
   .week-banner.is-other strong { color: #f0c877; }
 }
 
-/* Clearing a day: small, quiet, and only present when there is something to
-   clear, so it never invites a stray tap on an empty day. */
+/* Clearing a day. Words rather than an ✕: the symbol was easy to miss and
+   ambiguous — it could as easily have meant "remove this day entirely". */
 .day-clear {
   width: auto;
   margin: 0;
-  padding: 0.15rem 0.5rem;
-  font-size: 0.85rem;
-  font-weight: 400;
-  line-height: 1;
-  color: var(--muted);
+  padding: 0.2rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--brand);
   background: transparent;
-  border: 1px solid var(--line);
+  border: 1px solid var(--brand);
   border-radius: 999px;
+  white-space: nowrap;
 }
 
 .day-clear[hidden] { display: none; }
@@ -255,3 +270,7 @@ button.link {
 /* Empty text nodes would otherwise leave a gap under every day. */
 .day-note:empty,
 .day-error:empty { display: none; }
+
+/* Pressable even when a day is unfinished — pressing it is how the worker
+   finds out which one. Muted so it does not read as "ready to send". */
+button.primary.is-blocked { background: #8a8f98; }
