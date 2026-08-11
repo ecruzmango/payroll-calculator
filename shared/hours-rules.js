@@ -106,12 +106,22 @@ export function minutesOfTime(value) {
   return h * 60 + min;
 }
 
-/** "07:30" -> "7:30 a. m." in the worker's locale, for display only. */
-export function formatTime(value, locale = 'es-ES') {
+/**
+ * "15:30" -> "3:30 p.m.", for display only.
+ *
+ * es-MX with hour12 forced. Spanish locales default to 24-hour, which reads as
+ * military time to the people using this; es-ES also renders "p. m." with an
+ * extra space, which is wider than it needs to be in a dropdown.
+ */
+export function formatTime(value, locale = 'es-MX') {
   const mins = minutesOfTime(value);
   if (mins === null) return '';
   const d = new Date(2000, 0, 1, Math.floor(mins / 60), mins % 60);
-  return new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit' }).format(d);
+  return new Intl.DateTimeFormat(locale, {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  }).format(d);
 }
 
 /**
@@ -144,7 +154,7 @@ export const crossesMidnight = (start, end) => {
  * owner aiming for 6:15 could end up with 6:24. A list of allowed times cannot
  * be wrong.
  */
-export function quarterHourOptions(locale = 'es-ES') {
+export function quarterHourOptions(locale = 'es-MX') {
   const options = [];
   for (let mins = 0; mins < 24 * 60; mins += 15) {
     const h = String(Math.floor(mins / 60)).padStart(2, '0');
