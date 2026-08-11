@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import SubmissionRow from './SubmissionRow.jsx';
+import { DAYS } from '../constants.js';
 import {
   formUrl,
   syncList,
@@ -199,6 +200,16 @@ export default function FormPanel({ slot, weekOf, workers, onServerChange, onApp
     }
   };
 
+  /**
+   * Days with no hours become an explicit 0 when applied.
+   *
+   * A blank cell is ambiguous — it could mean "did not work" or "has not told
+   * us yet". Once a worker has submitted, the answer is known, so recording it
+   * as 0 makes the week complete in the table and in the PDF.
+   */
+  const zeroBlanks = hours =>
+    Object.fromEntries(DAYS.map(d => [d, String(hours[d] ?? '').trim() === '' ? '0' : hours[d]]));
+
   // What the table held before each submission was applied, so Aplicar can be
   // taken back. Applying writes straight into payroll off a single click, and a
   // confirm dialog on every one would just be trained away.
@@ -208,7 +219,7 @@ export default function FormPanel({ slot, weekOf, workers, onServerChange, onApp
     const before = workers.find(w => w.id === submission.workerId)?.hours;
     if (before) undoable.current.set(submission.id, before);
 
-    onApply(submission.workerId, hours);
+    onApply(submission.workerId, zeroBlanks(hours));
     try {
       await markApplied({ listId: slot.id, managerSecret: server.managerSecret, ids: [submission.id] });
       await refresh();
@@ -250,7 +261,7 @@ export default function FormPanel({ slot, weekOf, workers, onServerChange, onApp
     pending.forEach(s => {
       const before = workers.find(w => w.id === s.workerId)?.hours;
       if (before) undoable.current.set(s.id, before);
-      onApply(s.workerId, s.hours);
+      onApply(s.workerId, zeroBlanks(s.hours));
     });
     try {
       await markApplied({

@@ -137,6 +137,25 @@ export const crossesMidnight = (start, end) => {
 };
 
 /**
+ * Every quarter hour of the day, as {value, label} for a <select>.
+ *
+ * A <select> rather than `input[type=time]` with `step`: browsers treat step as
+ * a validation hint and still let the minute column land on any value, so an
+ * owner aiming for 6:15 could end up with 6:24. A list of allowed times cannot
+ * be wrong.
+ */
+export function quarterHourOptions(locale = 'es-ES') {
+  const options = [];
+  for (let mins = 0; mins < 24 * 60; mins += 15) {
+    const h = String(Math.floor(mins / 60)).padStart(2, '0');
+    const m = String(mins % 60).padStart(2, '0');
+    const value = `${h}:${m}`;
+    options.push({ value, label: formatTime(value, locale) });
+  }
+  return options;
+}
+
+/**
  * Validate a week of {start,end} pairs and derive the hours from them.
  * The server recomputes with this rather than trusting any total sent by the
  * client — the times are the record, the hours are derived.
