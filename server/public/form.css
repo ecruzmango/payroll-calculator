@@ -63,35 +63,70 @@ h2 { font-size: 1.15rem; margin: 1.4rem 0 0.6rem; }
 .name-btn:active { background: #eef0ff; }
 .name-btn .done { font-size: 0.8rem; color: var(--ok); font-weight: 600; white-space: nowrap; }
 
-/* Day rows */
-.day-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.55rem 0;
+/* ---- One day ----
+   Each day is its own block rather than a table row: on a phone two time
+   fields plus a label do not fit side by side legibly, and a day that was
+   worked should look different at a glance from one that was not. */
+.day-block {
+  padding: 0.7rem 0;
   border-bottom: 1px solid var(--line);
 }
 
-.day-row:last-child { border-bottom: 0; }
+.day-block:last-child { border-bottom: 0; }
 
-.day-name { flex: 1; }
-.day-name strong { display: block; font-size: 1.05rem; }
-.day-name span { color: var(--muted); font-size: 0.85rem; }
+.day-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.45rem;
+}
 
-.day-row input {
-  width: 5.5rem;
-  padding: 0.75rem;
-  font-size: 1.25rem;
+.day-head strong { font-size: 1.05rem; }
+.day-date { color: var(--muted); font-size: 0.85rem; }
+
+/* The computed result, pushed right so the eye can scan the column. */
+.day-hours {
+  margin-left: auto;
+  font-weight: 700;
+  color: var(--ok);
+  font-variant-numeric: tabular-nums;
+}
+
+.time-pair { display: flex; gap: 0.6rem; }
+
+.time-pair label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.time-pair label span { font-size: 0.78rem; color: var(--muted); }
+
+.time-pair input {
+  width: 100%;
+  padding: 0.7rem;
+  font-size: 1.1rem;
   font-family: inherit;
   text-align: center;
   border: 2px solid var(--line);
   border-radius: 10px;
   background: #fff;
   color: var(--ink);
+  /* iOS renders an empty time input very short without this. */
+  min-height: 3rem;
 }
 
-.day-row input:focus { border-color: var(--brand); outline: none; }
-.day-row input.bad { border-color: var(--bad); background: #fff1f0; }
+.time-pair input:focus { border-color: var(--brand); outline: none; }
+.time-pair input.bad { border-color: var(--bad); background: #fff1f0; }
+
+.day-block.has-hours .day-head strong { color: var(--ok); }
+
+.day-note {
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
 
 .day-error { color: var(--bad); font-size: 0.8rem; padding: 0 0 0.4rem; }
 
@@ -151,9 +186,9 @@ button.link {
     --bg: #14161a; --card: #1d2026; --ink: #f0f2f5;
     --muted: #99a; --line: #333944;
   }
-  .day-row input { background: #14161a; }
+  .time-pair input { background: #14161a; }
   .name-btn:active { background: #232838; }
-  .day-row input.bad { background: #2a1a1a; }
+  .time-pair input.bad { background: #2a1a1a; }
   .banner.info { background: #1e2547; color: #c6d0ff; }
   .banner.bad { background: #33201f; color: #ff9d94; }
 }

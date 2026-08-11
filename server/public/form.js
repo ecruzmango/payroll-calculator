@@ -1,4 +1,10 @@
-import { DAY_LABELS, isPartialNumber, hoursIssue, totalHours } from '/shared/hours-rules.js';
+import {
+  DAY_LABELS,
+  totalHours,
+  hoursFromRange,
+  crossesMidnight,
+  validateTimesMap
+} from '/shared/hours-rules.js';
 import { datesForWeek, relativeWeekName, currentWeekOf } from '/shared/week.js';
 
 const token = location.pathname.split('/').pop();
@@ -9,21 +15,32 @@ const state = {
   data: null,
   workerId: null,
   weekOf: null,
-  hours: {},
+  // { sabado: { start: '07:00', end: '15:30' } } — the times are the record,
+  // and the hours are always derived from them.
+  times: {},
   errors: {},
   sending: false,
   error: null
 };
 
 const el = (tag, props = {}, ...children) => {
-  const node = Object.assign(document.createElement(tag), props);
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props)) {
+    // Hyphenated names (aria-*, data-*) are attributes, not properties.
+    // Assigning them directly creates a stray JS property and renders nothing.
+    if (key.includes('-')) node.setAttribute(key, value);
+    else node[key] = value;
+  }
   for (const child of children.flat()) {
     if (child != null) node.append(child.nodeType ? child : String(child));
   }
   return node;
 };
 
-const emptyHours = () => Object.fromEntries(state.data.days.map(d => [d, '']));
+const emptyTimes = () => Object.fromEntries(state.data.days.map(d => [d, { start: '', end: '' }]));
+
+/** Hours derived from whatever is currently entered. */
+const derivedHours = () => validateTimesMap(state.times).hours;
 
 /**
  * The week these hours belong to, stated plainly.
@@ -57,7 +74,7 @@ async function boot() {
   }
 
   state.weekOf = state.data.weeks[0].weekOf;
-  state.hours = emptyHours();
+  state.times = emptyTimes();
 
   // Returning workers skip the name step — the phone remembers who they are.
   const remembered = localStorage.getItem(REMEMBER_KEY);
@@ -82,7 +99,14 @@ function selectWorker(workerId, { render: shouldRender = true } = {}) {
 /** Prefill with whatever this worker last sent for the selected week. */
 function loadExistingHours() {
   const prior = state.data.alreadySubmitted[`${state.workerId}:${state.weekOf}`];
-  state.hours = prior ? { ...emptyHours(), ...prior.hours } : emptyHours();
+  const times = emptyTimes();
+  // Older submissions hold only a total, with no times to restore.
+  if (prior?.times) {
+    for (const day of state.data.days) {
+      if (prior.times[day]) times[day] = { ...prior.times[day] };
+    }
+  }
+  state.times = times;
   state.errors = {};
 }
 
@@ -126,51 +150,65 @@ function renderHoursForm() {
   const dates = datesForWeek(state.weekOf);
   const prior = priorSubmission();
 
-  const total = totalHours(state.hours);
+  const hours = derivedHours();
+  const total = totalHours(hours);
   const hasError = Object.keys(state.errors).length > 0;
-  const nothingEntered = state.data.days.every(d => String(state.hours[d] ?? '').trim() === '');
+  const nothingEntered = state.data.days.every(
+    d => !state.times[d]?.start && !state.times[d]?.end
+  );
 
-  const dayRows = state.data.days.flatMap(day => {
+  /**
+   * One day: when they started, when they finished, and the resulting hours.
+   *
+   * `input type="time"` rather than two long <select>s. On a phone it opens the
+   * native hour/minute picker — the same "choose an hour and a minute" the owner
+   * asked for — without a 96-item list to scroll, and it handles 12h/24h
+   * display according to the worker's own phone settings.
+   */
+  const dayRows = state.data.days.map(day => {
     const date = dates[day];
     const issue = state.errors[day];
+    const worked = hoursFromRange(state.times[day]?.start, state.times[day]?.end);
 
-    const input = el('input', {
-      type: 'text',
-      inputMode: 'decimal',
-      value: state.hours[day] ?? '',
-      placeholder: '0',
-      className: issue ? 'bad' : '',
-      'aria-label': DAY_LABELS[day]
-    });
+    const timeField = which =>
+      el('input', {
+        type: 'time',
+        value: state.times[day]?.[which] ?? '',
+        className: issue ? 'bad' : '',
+        'aria-label': `${which === 'start' ? 'Entrada' : 'Salida'} ${DAY_LABELS[day]}`,
+        oninput: e => {
+          state.times[day] = { ...state.times[day], [which]: e.target.value };
+          const check = validateTimesMap(state.times);
+          state.errors = check.errors;
+          renderKeepingFocus(e.target);
+        }
+      });
 
-    input.addEventListener('input', e => {
-      const raw = e.target.value;
-      if (!isPartialNumber(raw)) {
-        e.target.value = state.hours[day] ?? '';
-        return;
-      }
-      state.hours[day] = raw;
-      const problem = hoursIssue(raw);
-      if (problem) state.errors[day] = problem;
-      else delete state.errors[day];
-      updateLiveTotal();
-      e.target.className = state.errors[day] ? 'bad' : '';
-    });
-
-    return [
+    return el(
+      'div',
+      { className: `day-block${worked ? ' has-hours' : ''}${issue ? ' has-error' : ''}` },
       el(
         'div',
-        { className: 'day-row' },
+        { className: 'day-head' },
+        el('strong', {}, DAY_LABELS[day]),
+        el('span', { className: 'day-date' }, `${date.getDate()}/${date.getMonth() + 1}`),
         el(
-          'div',
-          { className: 'day-name' },
-          el('strong', {}, DAY_LABELS[day]),
-          el('span', {}, `${date.getDate()}/${date.getMonth() + 1}`)
-        ),
-        input
+          'span',
+          { className: 'day-hours' },
+          worked ? `${formatTotal(worked)} h` : ''
+        )
       ),
+      el(
+        'div',
+        { className: 'time-pair' },
+        el('label', {}, el('span', {}, 'Entró'), timeField('start')),
+        el('label', {}, el('span', {}, 'Salió'), timeField('end'))
+      ),
+      crossesMidnight(state.times[day]?.start, state.times[day]?.end)
+        ? el('div', { className: 'day-note' }, 'Termina al día siguiente')
+        : null,
       issue ? el('div', { className: 'day-error' }, issue) : null
-    ];
+    );
   });
 
   const sendBtn = el(
@@ -195,7 +233,7 @@ function renderHoursForm() {
     el(
       'p',
       { className: 'howto' },
-      'Escribe las horas que trabajaste cada día. Deja el día en blanco si no trabajaste.'
+      'Elige a qué hora entraste y saliste cada día. Deja el día vacío si no trabajaste.'
     ),
 
     state.error ? el('div', { className: 'banner bad' }, state.error) : null,
@@ -287,15 +325,18 @@ function renderDone(result) {
 
 const formatTotal = n => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, ''));
 
-/** Update just the total while typing, so the whole form doesn't lose focus. */
-function updateLiveTotal() {
-  const node = document.getElementById('total');
-  if (node) node.textContent = `${formatTotal(totalHours(state.hours))} h`;
-  const send = document.getElementById('send');
-  if (send) {
-    const nothing = state.data.days.every(d => String(state.hours[d] ?? '').trim() === '');
-    send.disabled = state.sending || Object.keys(state.errors).length > 0 || nothing;
-  }
+/**
+ * Re-render, then put the cursor back where it was.
+ * Changing one time changes that day's hours, the running total and possibly an
+ * error message, so a full re-render is the simplest correct answer — as long
+ * as focus survives it.
+ */
+function renderKeepingFocus(activeEl) {
+  const label = activeEl?.getAttribute('aria-label');
+  render();
+  if (!label) return;
+  const again = document.querySelector(`[aria-label="${CSS.escape(label)}"]`);
+  again?.focus();
 }
 
 function render(node) {
@@ -314,7 +355,7 @@ async function submit() {
     const res = await fetch(`/api/form/${encodeURIComponent(token)}/submit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workerId: state.workerId, weekOf: state.weekOf, hours: state.hours })
+      body: JSON.stringify({ workerId: state.workerId, weekOf: state.weekOf, times: state.times })
     });
     const payload = await res.json().catch(() => ({}));
 

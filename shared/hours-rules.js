@@ -91,3 +91,92 @@ export function validateHoursMap(hours) {
 export function totalHours(hours) {
   return DAYS.reduce((sum, day) => sum + numericValue(hours?.[day]), 0);
 }
+
+// ---- Start/end times -----------------------------------------------------
+// Workers enter when they started and finished rather than a total, which is
+// both easier to remember and far easier for the owner to sanity-check.
+
+/** "07:30" -> 450 minutes past midnight. null if not a valid time. */
+export function minutesOfTime(value) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(value ?? '').trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/** "07:30" -> "7:30 a. m." in the worker's locale, for display only. */
+export function formatTime(value, locale = 'es-ES') {
+  const mins = minutesOfTime(value);
+  if (mins === null) return '';
+  const d = new Date(2000, 0, 1, Math.floor(mins / 60), mins % 60);
+  return new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit' }).format(d);
+}
+
+/**
+ * Decimal hours between two times, rounded to 2dp.
+ *
+ * An end earlier than the start is read as crossing midnight rather than an
+ * error — night shifts are real — but callers surface that explicitly so a
+ * mistyped time cannot quietly become a 15-hour day.
+ */
+export function hoursFromRange(start, end) {
+  const from = minutesOfTime(start);
+  const to = minutesOfTime(end);
+  if (from === null || to === null || from === to) return null;
+
+  const span = to > from ? to - from : to + 24 * 60 - from;
+  return Math.round((span / 60) * 100) / 100;
+}
+
+export const crossesMidnight = (start, end) => {
+  const from = minutesOfTime(start);
+  const to = minutesOfTime(end);
+  return from !== null && to !== null && to < from;
+};
+
+/**
+ * Validate a week of {start,end} pairs and derive the hours from them.
+ * The server recomputes with this rather than trusting any total sent by the
+ * client — the times are the record, the hours are derived.
+ */
+export function validateTimesMap(times) {
+  const errors = {};
+  const clean = {};
+  const hours = {};
+
+  for (const day of DAYS) {
+    const start = String(times?.[day]?.start ?? '').trim();
+    const end = String(times?.[day]?.end ?? '').trim();
+
+    if (!start && !end) {
+      clean[day] = null;
+      hours[day] = '';
+      continue;
+    }
+    if (!start || !end) {
+      errors[day] = 'Falta la hora de entrada o de salida';
+      continue;
+    }
+    if (minutesOfTime(start) === null || minutesOfTime(end) === null) {
+      errors[day] = 'Hora no válida';
+      continue;
+    }
+
+    const worked = hoursFromRange(start, end);
+    if (worked === null) {
+      errors[day] = 'La entrada y la salida no pueden ser iguales';
+      continue;
+    }
+    if (worked > MAX_HOURS_PER_DAY) {
+      errors[day] = `Más de ${MAX_HOURS_PER_DAY} horas en un día`;
+      continue;
+    }
+
+    clean[day] = { start, end };
+    hours[day] = String(worked);
+  }
+
+  return { ok: Object.keys(errors).length === 0, errors, times: clean, hours };
+}

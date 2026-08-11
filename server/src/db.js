@@ -58,6 +58,14 @@ export async function initSchema() {
       applied_at   INTEGER
     )`);
 
+  // Start/end times, added after workers moved from typing a total to picking
+  // when they clocked in and out. `hours` stays the derived value so every
+  // existing submission and the owner's table keep working unchanged.
+  const subInfo = await db.execute('PRAGMA table_info(submissions)');
+  if (!subInfo.rows.map(r => r.name).includes('times')) {
+    await db.execute('ALTER TABLE submissions ADD COLUMN times TEXT');
+  }
+
   await db.execute(`
     CREATE INDEX IF NOT EXISTS idx_submissions_lookup
       ON submissions (list_id, week_of, worker_id, submitted_at DESC)`);
@@ -130,11 +138,11 @@ export async function upsertList(list, workers) {
   return getListById(list.id);
 }
 
-export async function insertSubmission({ listId, workerId, weekOf, hours }) {
+export async function insertSubmission({ listId, workerId, weekOf, hours, times }) {
   await db.execute({
-    sql: `INSERT INTO submissions (list_id, worker_id, week_of, hours, submitted_at)
-          VALUES (?, ?, ?, ?, ?)`,
-    args: [listId, workerId, weekOf, JSON.stringify(hours), Date.now()]
+    sql: `INSERT INTO submissions (list_id, worker_id, week_of, hours, times, submitted_at)
+          VALUES (?, ?, ?, ?, ?, ?)`,
+    args: [listId, workerId, weekOf, JSON.stringify(hours), times ? JSON.stringify(times) : null, Date.now()]
   });
 }
 
@@ -159,6 +167,7 @@ export async function latestSubmissions(listId, weekOf) {
     workerId: r.worker_id,
     weekOf: r.week_of,
     hours: JSON.parse(r.hours),
+    times: r.times ? JSON.parse(r.times) : null,
     submittedAt: Number(r.submitted_at),
     appliedAt: r.applied_at === null ? null : Number(r.applied_at)
   }));

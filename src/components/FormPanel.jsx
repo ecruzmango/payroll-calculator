@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { DAYS } from '../constants.js';
+import SubmissionRow from './SubmissionRow.jsx';
 import {
   formUrl,
   syncList,
@@ -9,7 +9,7 @@ import {
   markReminderSent,
   testReminderPush
 } from '../lib/api.js';
-import { totalHours } from '../../shared/hours-rules.js';
+
 
 const timeAgo = ts => {
   const mins = Math.round((Date.now() - ts) / 60000);
@@ -199,8 +199,8 @@ export default function FormPanel({ slot, weekOf, workers, onServerChange, onApp
     }
   };
 
-  const handleApply = async submission => {
-    onApply(submission.workerId, submission.hours);
+  const handleApply = async (submission, hours = submission.hours) => {
+    onApply(submission.workerId, hours);
     try {
       await markApplied({ listId: slot.id, managerSecret: server.managerSecret, ids: [submission.id] });
       await refresh();
@@ -363,27 +363,12 @@ export default function FormPanel({ slot, weekOf, workers, onServerChange, onApp
           )}
 
           {inbox.submissions.map(s => (
-            <div key={s.id} className={`inbox-row${s.appliedAt ? ' is-applied' : ''}`}>
-              <div className="inbox-who">
-                <strong>{nameOf(s.workerId)}</strong>
-                <span>{timeAgo(s.submittedAt)}</span>
-              </div>
-              <div className="inbox-hours">
-                {DAYS.map(d => (
-                  <span key={d} className="pill" title={d}>
-                    {s.hours[d] === '' || s.hours[d] === undefined ? '–' : s.hours[d]}
-                  </span>
-                ))}
-              </div>
-              <div className="inbox-total">{totalHours(s.hours)} h</div>
-              {s.appliedAt ? (
-                <span className="applied-mark">✓ Aplicado</span>
-              ) : (
-                <button className="btn-small" onClick={() => handleApply(s)}>
-                  Aplicar
-                </button>
-              )}
-            </div>
+            <SubmissionRow
+              key={s.id}
+              submission={s}
+              workerName={nameOf(s.workerId)}
+              onApply={handleApply}
+            />
           ))}
 
           {inbox.missing.length > 0 && (

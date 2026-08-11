@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { DAYS, validateHoursMap, totalHours } from '../../shared/hours-rules.js';
+import { DAYS, validateHoursMap, validateTimesMap, totalHours } from '../../shared/hours-rules.js';
 import { currentWeekOf, addWeeks, formatWeekRange, isValidISODate } from '../../shared/week.js';
 import {
   newToken,
@@ -238,6 +238,7 @@ router.get('/form/:token', rateLimit({ windowMs: 60_000, max: 60 }), async (req,
     for (const s of await latestSubmissions(list.id, week.weekOf)) {
       alreadySubmitted[`${s.workerId}:${week.weekOf}`] = {
         hours: s.hours,
+        times: s.times,
         total: totalHours(s.hours),
         submittedAt: s.submittedAt
       };
@@ -269,10 +270,16 @@ router.post('/form/:token/submit', rateLimit({ windowMs: 60_000, max: 20 }), asy
   }
 
   // Re-validated here: the form's own check is a convenience, not a guarantee.
-  const { ok, errors, hours } = validateHoursMap(req.body?.hours);
-  if (!ok) return res.status(400).json({ error: 'Revisa las horas.', errors });
+  // When times are sent, the hours are DERIVED from them server-side rather
+  // than taken from the client, so the stored total always matches the times.
+  const sentTimes = req.body?.times;
+  const result = sentTimes ? validateTimesMap(sentTimes) : validateHoursMap(req.body?.hours);
+  if (!result.ok) return res.status(400).json({ error: 'Revisa las horas.', errors: result.errors });
 
-  await insertSubmission({ listId: list.id, workerId, weekOf, hours });
+  const { hours } = result;
+  const times = sentTimes ? result.times : null;
+
+  await insertSubmission({ listId: list.id, workerId, weekOf, hours, times });
 
   res.json({
     ok: true,
